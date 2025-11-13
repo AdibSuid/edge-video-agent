@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  edge-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: edge-video-agent
+    restart: unless-stopped
+    
+    network_mode: host
+    
+    volumes:
+      - ./configs/config.yaml:/etc/edge-agent/config.yaml:ro
+      - ./certs:/etc/edge-agent/certs:ro
+      - edge-agent-buffer:/var/lib/edge-agent/buffer
+      - edge-agent-logs:/var/log/edge-agent
+    
+    environment:
+      - EDGE_AGENT_AGENT_ID=${AGENT_ID:-edge-001}
+      - EDGE_AGENT_AGENT_NAME=${AGENT_NAME:-Edge Agent}
+      - EDGE_AGENT_CLOUD_SRT_ENDPOINT=${SRT_ENDPOINT}
+      - EDGE_AGENT_CLOUD_SRT_PASSPHRASE=${SRT_PASSPHRASE}
+      - EDGE_AGENT_CLOUD_GRPC_ENDPOINT=${GRPC_ENDPOINT}
+      - EDGE_AGENT_TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - EDGE_AGENT_TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - TZ=UTC
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 512M
+    
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  edge-agent-buffer:
+    driver: local
+  edge-agent-logs:
+    driver: local

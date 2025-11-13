@@ -1,0 +1,87 @@
+# Edge Video Agent Configuration
+
+agent:
+  id: "edge-001"
+  name: "Building A - Floor 1"
+
+cloud:
+  # SRT endpoint for video streaming
+  srt_endpoint: "srt://cloud.example.com:9000"
+  srt_passphrase: "your-secure-passphrase-change-me"
+  srt_latency: 1000  # milliseconds
+  
+  # gRPC endpoint for control plane
+  grpc_endpoint: "cloud.example.com:50051"
+  
+  # TLS certificates for mutual TLS (optional)
+  tls_cert: "/etc/edge-agent/certs/client.crt"
+  tls_key: "/etc/edge-agent/certs/client.key"
+  tls_ca: "/etc/edge-agent/certs/ca.crt"
+
+onvif:
+  enabled: true
+  discovery_interval: 300s  # Run discovery every 5 minutes
+  timeout: 10s
+  # Optional: Specify network interfaces for discovery
+  # interfaces:
+  #   - "eth0"
+  #   - "wlan0"
+
+encoding:
+  preset: "superfast"  # ultrafast, superfast, veryfast, faster, fast, medium
+  tune: "zerolatency"
+  default_bitrate: 2000000  # 2 Mbps
+  default_fps: 15
+  default_resolution: "1280x720"
+  gop_size: 30
+  max_rate: 2500000
+  buf_size: 5000000
+
+adaptive:
+  enabled: true
+  measurement_window: 30s
+  bitrate_threshold: 0.8  # Downgrade if utilization < 80%
+  
+  # Bitrate ladder (ordered from high to low quality)
+  bitrate_ladder:
+    - name: "high"
+      bitrate: 3000000  # 3 Mbps
+      fps: 30
+      resolution: "1920x1080"
+    
+    - name: "medium"
+      bitrate: 2000000  # 2 Mbps
+      fps: 15
+      resolution: "1280x720"
+    
+    - name: "low"
+      bitrate: 1000000  # 1 Mbps
+      fps: 10
+      resolution: "640x480"
+
+telegram:
+  enabled: false
+  bot_token: "your-bot-token"
+  chat_id: 0  # Your Telegram chat ID
+
+grpc:
+  enabled: true
+  port: 50051
+  # TLS for gRPC (optional, uses mutual TLS if specified)
+  # tls_cert: "/etc/edge-agent/certs/server.crt"
+  # tls_key: "/etc/edge-agent/certs/server.key"
+  # tls_ca: "/etc/edge-agent/certs/ca.crt"
+
+metrics:
+  enabled: true
+  port: 8080
+
+logging:
+  level: "info"  # trace, debug, info, warn, error
+  format: "json"  # json or text
+  output: "stdout"  # stdout or file path
+
+storage:
+  buffer_path: "/var/lib/edge-agent/buffer"
+  buffer_size: 1073741824  # 1GB
+  buffer_duration: 60s
