@@ -5,10 +5,17 @@ RUN apk add --no-cache git make
 
 WORKDIR /build
 
-COPY go.mod go.sum ./
+# Copy go.mod only. go.sum may not exist locally (e.g., when building from a clean repo
+# or on systems without Go). The builder will run `go mod download` which will
+# generate/go fetch dependencies and produce go.sum inside the build container.
+COPY go.mod ./
 RUN go mod download
 
 COPY . .
+
+# Ensure go.sum is generated inside the build container so `go build` has
+# verified module checksums. `go mod tidy` will add any missing entries to go.sum.
+RUN go mod tidy
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
     -ldflags="-w -s -X main.version=$(git describe --tags --always 2>/dev/null || echo 'dev') \

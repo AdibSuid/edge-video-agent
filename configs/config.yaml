@@ -6,12 +6,15 @@ agent:
 
 cloud:
   # SRT endpoint for video streaming
-  srt_endpoint: "srt://cloud.example.com:9000"
-  srt_passphrase: "your-secure-passphrase-change-me"
+  # For local testing you can write the encoded output to a file inside the
+  # buffer path. Use a file URL like below. In production, set this to your
+  # SRT ingest endpoint (e.g. srt://cloud.example.com:9000)
+  srt_endpoint: "file:/var/lib/edge-agent/buffer/out.ts"
+  srt_passphrase: "fsihbeinjkdHEBFSksd6hejks"
   srt_latency: 1000  # milliseconds
   
   # gRPC endpoint for control plane
-  grpc_endpoint: "cloud.example.com:50051"
+  grpc_endpoint: "localhost:50051"
   
   # TLS certificates for mutual TLS (optional)
   tls_cert: "/etc/edge-agent/certs/client.crt"
@@ -77,7 +80,7 @@ metrics:
   port: 8080
 
 logging:
-  level: "info"  # trace, debug, info, warn, error
+  level: "debug"  # trace, debug, info, warn, error
   format: "json"  # json or text
   output: "stdout"  # stdout or file path
 
@@ -85,3 +88,15 @@ storage:
   buffer_path: "/var/lib/edge-agent/buffer"
   buffer_size: 1073741824  # 1GB
   buffer_duration: 60s
+
+# Static cameras (optional). You can list cameras here to have the agent add them
+# at startup. If `enabled` is false the entry will be ignored.
+cameras:
+  - id: "cam-orinnano-01"
+    name: "Orinnano Camera"
+    rtsp_url: "rtsp://orinnano:orinnano@192.168.1.102:554/stream1"
+    # username/password may be left empty when credentials are embedded in the URL
+    username: ""
+    password: ""
+    type: "rtsp"
+    enabled: true

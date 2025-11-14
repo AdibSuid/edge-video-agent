@@ -8,12 +8,18 @@ services:
     container_name: edge-video-agent
     restart: unless-stopped
     
-    network_mode: host
+    # Use explicit port mapping on Windows (host networking is not fully
+    # supported on Docker Desktop for Windows). Mapping ports makes the
+    # agent's HTTP and gRPC endpoints reachable at localhost.
+    ports:
+      - "8080:8080"
+      - "50051:50051"
     
     volumes:
       - ./configs/config.yaml:/etc/edge-agent/config.yaml:ro
       - ./certs:/etc/edge-agent/certs:ro
-      - edge-agent-buffer:/var/lib/edge-agent/buffer
+      # Bind the buffer to a host folder for easy inspection during local testing
+      - ./tmp/buffer:/var/lib/edge-agent/buffer
       - edge-agent-logs:/var/log/edge-agent
     
     environment:

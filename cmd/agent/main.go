@@ -11,6 +11,7 @@ import (
 
 	"github.com/yourorg/edge-video-agent/internal/agent"
 	"github.com/yourorg/edge-video-agent/internal/alert"
+	"github.com/yourorg/edge-video-agent/internal/camera"
 	"github.com/yourorg/edge-video-agent/internal/config"
 	"github.com/yourorg/edge-video-agent/internal/grpc"
 	"github.com/yourorg/edge-video-agent/internal/metrics"
@@ -78,6 +79,9 @@ func main() {
 		log.Fatalf("Failed to initialize agent: %v", err)
 	}
 
+	// NOTE: static cameras are added after the agent has started (so the
+	// stream manager's context is available). See further below.
+
 	metricsServer := metrics.NewServer(cfg.Metrics.Port)
 	go func() {
 		if err := metricsServer.Start(); err != nil {
@@ -99,6 +103,31 @@ func main() {
 
 	if err := edgeAgent.Start(ctx); err != nil {
 		log.Fatalf("Failed to start agent: %v", err)
+	}
+
+	// Add static cameras from configuration now that the agent is running.
+	for _, camCfg := range cfg.Cameras {
+		if !camCfg.Enabled {
+			continue
+		}
+		cam := camera.Camera{
+			ID:       camCfg.ID,
+			Name:     camCfg.Name,
+			RTSPURL:  camCfg.RTSPURL,
+			Username: camCfg.Username,
+			Password: camCfg.Password,
+			Type:     camCfg.Type,
+			Metadata: camCfg.Metadata,
+		}
+		if cam.ID == "" {
+			// generate a simple ID if missing
+			cam.ID = cam.Name
+		}
+		if err := edgeAgent.AddCamera(cam); err != nil {
+			log.Warnf("Failed to add camera %s from config: %v", cam.ID, err)
+		} else {
+			log.Infof("Added camera %s from config", cam.ID)
+		}
 	}
 
 	if onvifDiscovery != nil {

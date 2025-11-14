@@ -2,6 +2,7 @@ package stream
 
 import (
 	"bufio"
+	"io"
 	"context"
 	"fmt"
 	"os/exec"
@@ -202,13 +203,20 @@ func (s *Stream) buildSRTURL() string {
 	passphrase := s.cfg.Cloud.SRTPassphrase
 	latency := s.cfg.Cloud.SRTLatency
 
+	// If the endpoint is a local file URL, don't append SRT params — FFmpeg
+	// expects a plain file path for file output. For SRT endpoints we append
+	// the necessary SRT connection parameters.
+	if strings.HasPrefix(endpoint, "file:") {
+		return endpoint
+	}
+
 	params := fmt.Sprintf("?mode=caller&latency=%d&pbkeylen=16&passphrase=%s&streamid=%s",
 		latency, passphrase, s.cameraID)
 
 	return endpoint + params
 }
 
-func (s *Stream) monitorFFmpeg(stderr *bufio.Reader) {
+func (s *Stream) monitorFFmpeg(stderr io.Reader) {
 	scanner := bufio.NewScanner(stderr)
 	for scanner.Scan() {
 		line := scanner.Text()

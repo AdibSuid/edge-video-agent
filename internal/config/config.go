@@ -14,11 +14,23 @@ type Config struct {
 	ONVIF    ONVIFConfig    `mapstructure:"onvif"`
 	Encoding EncodingConfig `mapstructure:"encoding"`
 	Adaptive AdaptiveConfig `mapstructure:"adaptive"`
+	Cameras  []CameraConfig `mapstructure:"cameras"`
 	Telegram TelegramConfig `mapstructure:"telegram"`
 	GRPC     GRPCConfig     `mapstructure:"grpc"`
 	Metrics  MetricsConfig  `mapstructure:"metrics"`
 	Logging  LoggingConfig  `mapstructure:"logging"`
 	Storage  StorageConfig  `mapstructure:"storage"`
+}
+
+type CameraConfig struct {
+	ID       string            `mapstructure:"id"`
+	Name     string            `mapstructure:"name"`
+	RTSPURL  string            `mapstructure:"rtsp_url"`
+	Username string            `mapstructure:"username"`
+	Password string            `mapstructure:"password"`
+	Type     string            `mapstructure:"type"`
+	Metadata map[string]string `mapstructure:"metadata"`
+	Enabled  bool              `mapstructure:"enabled"`
 }
 
 type AgentConfig struct {
