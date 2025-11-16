@@ -1,0 +1,8 @@
+Flask==3.0.0
+PyYAML==6.0.1
+opencv-python==4.8.1.78
+numpy==1.24.3
+requests==2.31.0
+onvif-zeep==0.2.12
+python-telegram-bot==20.7
+psutil==5.9.6
