@@ -27,12 +27,19 @@ if HAVE_GST:
         HAVE_GST = False
 
 class Streamer:
-    """
-    Handles RTSP to SRT streaming with motion-triggered adaptive FPS
-    """
-    _instances = []
-    _low_quality = False
-    _lock = threading.Lock()
+        """
+        Handles RTSP to SRT streaming with motion-triggered adaptive FPS and
+        configurable SRT parameters and dynamic bitrate switching.
+
+        Behavior:
+        - Reads configuration keys: 'default_bitrate' (bps), 'low_bitrate' (bps),
+            'srt_mode' ('caller'|'listener'|'rendezvous') and 'srt_params' (dict)
+        - Selects bitrate based on motion state and network-quality flag.
+        - Restarts pipeline when quality changes to apply new encoder settings.
+        """
+        _instances = []
+        _low_quality = False
+        _lock = threading.Lock()
 
     def __init__(self, rtsp_url, srt_url, passphrase, config, stream_id):
         """
@@ -46,7 +53,18 @@ class Streamer:
             stream_id: Unique stream identifier
         """
         self.rtsp_url = rtsp_url
-        self.srt_url = f"{srt_url}?passphrase={passphrase}"
+        # Allow additional SRT params and mode to be configured
+        srt_mode = config.get('srt_mode')  # caller/listener/rendezvous
+        srt_params = config.get('srt_params', {}) or {}
+
+        # Build SRT URI query string (keep passphrase first)
+        q = [f"passphrase={passphrase}"]
+        if srt_mode:
+            q.append(f"mode={srt_mode}")
+        for k, v in srt_params.items():
+            q.append(f"{k}={v}")
+
+        self.srt_url = f"{srt_url}?{'&'.join(q)}"
         self.config = config
         self.stream_id = stream_id
         self.pipeline = None
@@ -62,6 +80,10 @@ class Streamer:
             zones=config.get('motion_zones', []),
             cooldown=config.get('motion_cooldown', 10)
         )
+
+        # Bitrate settings (bps). default_bitrate expected in bits/sec (e.g. 2000000)
+        self.default_bitrate = int(config.get('default_bitrate', 2000000))
+        self.low_bitrate = int(config.get('low_bitrate', max(400000, self.default_bitrate // 4)))
         
         # Setup logging
         self.logger = self._setup_logger()
@@ -143,6 +165,27 @@ class Streamer:
             return self.config.get('motion_high_fps', 25)
         return self.config.get('motion_low_fps', 1)
 
+    def _get_target_bitrate(self):
+        """Select a target bitrate (bps) based on motion and network quality.
+
+        Rules implemented:
+        - If motion active -> prefer full `default_bitrate`.
+        - If idle -> reduce to ~1/8 of default_bitrate (but at least 100 kbps).
+        - If global low-quality mode (_low_quality) is set -> reduce targets further
+        by approximately 1/4 to save bandwidth.
+        """
+        base = self.default_bitrate
+        if not self.motion_active:
+            target = max(100_000, base // 8)
+        else:
+            target = base
+
+        if self._low_quality:
+            # further reduce when network is slow
+            target = max(80_000, target // 4)
+
+        return int(target)
+
     def _get_resolution(self):
         """Get target resolution based on network quality"""
         if self._low_quality:
@@ -153,14 +196,17 @@ class Streamer:
         """Build GStreamer pipeline with current settings"""
         fps = self._get_target_fps()
         w, h = map(int, self._get_resolution().split('x'))
-        
+        # Use dynamic bitrate selection (convert to kbps for x264enc)
+        bitrate_bps = self._get_target_bitrate()
+        bitrate_kbps = max(64, int(bitrate_bps // 1000))
+
         pipeline_str = (
             f'rtspsrc location="{self.rtsp_url}" latency=0 ! '
             'rtph264depay ! h264parse ! avdec_h264 ! '
             'videoconvert ! videoscale ! '
             f'video/x-raw,width={w},height={h} ! '
             f'videorate ! video/x-raw,framerate={fps}/1 ! '
-            'x264enc bitrate=800 tune=zerolatency speed-preset=ultrafast ! '
+            f'x264enc bitrate={bitrate_kbps} tune=zerolatency speed-preset=ultrafast ! '
             'mpegtsmux ! '
             f'srtsink uri="{self.srt_url}"'
         )
@@ -178,12 +224,15 @@ class Streamer:
         """Construct an ffmpeg command line equivalent to the GStreamer pipeline"""
         fps = self._get_target_fps()
         w, h = map(int, self._get_resolution().split('x'))
-
         # Use -rtsp_transport tcp for reliability on many cameras
+        bitrate_bps = self._get_target_bitrate()
+        # ffmpeg expects bitrate like 2000k
+        bitrate_str = f"{max(64, int(bitrate_bps // 1000))}k"
+
         cmd = (
             f"ffmpeg -rtsp_transport tcp -hide_banner -loglevel info -y -i \"{self.rtsp_url}\" "
             f"-vf scale={w}:{h} -r {fps} -c:v libx264 -preset ultrafast -tune zerolatency "
-            f"-b:v {self.config.get('default_bitrate', 2000000)} -f mpegts \"{self.srt_url}\""
+            f"-b:v {bitrate_str} -f mpegts \"{self.srt_url}\""
         )
         return cmd
 

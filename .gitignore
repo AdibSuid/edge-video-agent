@@ -5,6 +5,47 @@ __pycache__/
 
 # Virtual environments
 venv/
+.venv/
+.env
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Logs
+*.log
+logs/
+network_simulation.log
+
+# Editor/IDE
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Pytest cache and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / static (if present)
+node_modules/
+static/js/*.map
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
 .env/
 .envrc
 .venv/
