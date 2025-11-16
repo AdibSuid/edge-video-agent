@@ -17,6 +17,7 @@ dist/
 
 # Logs
 *.log
+.log
 logs/
 network_simulation.log
 
