@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Camera Manually - Edge Agent</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; background: #f5f5f5; }
+        .card { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="row mb-4">
+            <div class="col">
+                <h1><i class="fas fa-plus"></i> Add Camera Manually</h1>
+                <p class="text-muted">Enter RTSP stream details manually</p>
+                <a href="/" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-body">
+                        <form id="addCameraForm">
+                            <div class="mb-3">
+                                <label for="cameraName" class="form-label">Camera Name</label>
+                                <input type="text" class="form-control" id="cameraName" 
+                                       placeholder="e.g., Front Door Camera" required>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="rtspUrl" class="form-label">RTSP URL</label>
+                                <input type="text" class="form-control" id="rtspUrl" 
+                                       placeholder="rtsp://username:password@192.168.1.100:554/stream" required>
+                                <small class="form-text text-muted">
+                                    Example: rtsp://admin:password@192.168.1.100:554/stream
+                                </small>
+                            </div>
+
+                            <div class="mb-3">
+                                <button type="button" class="btn btn-secondary" onclick="testRTSP()">
+                                    <i class="fas fa-vial"></i> Test Connection
+                                </button>
+                                <span id="testResult" class="ms-2"></span>
+                            </div>
+
+                            <hr>
+
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> Add Camera
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title"><i class="fas fa-info-circle"></i> RTSP URL Format</h5>
+                        <p class="small">Common RTSP URL formats:</p>
+                        
+                        <p class="small"><strong>Generic:</strong><br>
+                        <code>rtsp://user:pass@ip:port/stream</code></p>
+
+                        <p class="small"><strong>Hikvision:</strong><br>
+                        <code>rtsp://admin:password@192.168.1.64:554/Streaming/Channels/101</code></p>
+
+                        <p class="small"><strong>Dahua:</strong><br>
+                        <code>rtsp://admin:password@192.168.1.108:554/cam/realmonitor?channel=1&subtype=0</code></p>
+
+                        <p class="small"><strong>Axis:</strong><br>
+                        <code>rtsp://root:password@192.168.1.100/axis-media/media.amp</code></p>
+
+                        <p class="small"><strong>Foscam:</strong><br>
+                        <code>rtsp://admin:password@192.168.1.100:554/videoMain</code></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('addCameraForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById('cameraName').value;
+            const rtspUrl = document.getElementById('rtspUrl').value;
+
+            try {
+                const response = await fetch('/api/add_stream', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        name: name,
+                        rtsp_url: rtspUrl
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Camera added successfully!');
+                    window.location.href = '/';
+                } else {
+                    alert('Failed to add camera: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error adding camera: ' + error);
+            }
+        });
+
+        async function testRTSP() {
+            const rtspUrl = document.getElementById('rtspUrl').value;
+            const resultSpan = document.getElementById('testResult');
+
+            if (!rtspUrl) {
+                alert('Please enter an RTSP URL');
+                return;
+            }
+
+            resultSpan.innerHTML = '<span class="text-info"><i class="fas fa-spinner fa-spin"></i> Testing...</span>';
+
+            try {
+                const response = await fetch('/api/test_rtsp', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ rtsp_url: rtspUrl })
+                });
+
+                const data = await response.json();
+
+                if (data.success && data.valid) {
+                    resultSpan.innerHTML = '<span class="text-success"><i class="fas fa-check-circle"></i> Connection successful!</span>';
+                } else {
+                    resultSpan.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Connection failed</span>';
+                }
+            } catch (error) {
+                resultSpan.innerHTML = '<span class="text-danger"><i class="fas fa-times-circle"></i> Error: ' + error + '</span>';
+            }
+        }
+    </script>
+</body>
+</html>
