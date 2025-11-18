@@ -129,18 +129,21 @@ def start_stream(stream):
         del streamers[stream_id]
     
     try:
-        # Create streamer
+        # Create streamer with per-stream config
+        streamer_config = config.copy()
+        # Merge per-stream chunking/streaming settings
+        for key in ['streaming_enabled', 'chunking_enabled', 'chunk_duration', 'chunk_fps']:
+            if key in stream:
+                streamer_config[key] = stream[key]
         streamer = Streamer(
             rtsp_url=stream['rtsp_url'],
             srt_url=config['cloud_srt_host'],
             passphrase=config['srt_passphrase'],
-            config=config,
+            config=streamer_config,
             stream_id=stream_id
         )
-        
         streamers[stream_id] = streamer
         print(f"Started stream: {stream_id} - {stream['name']}")
-        
     except Exception as e:
         print(f"Failed to start stream {stream_id}: {e}")
 
@@ -262,7 +265,11 @@ def api_add_stream():
             'id': stream_id,
             'name': data.get('name', f'Camera {stream_id}'),
             'rtsp_url': data['rtsp_url'],
-            'enabled': True
+            'enabled': True,
+            'streaming_enabled': data.get('streaming_enabled', True),
+            'chunking_enabled': data.get('chunking_enabled', False),
+            'chunk_duration': int(data.get('chunk_duration', 5)),
+            'chunk_fps': int(data.get('chunk_fps', 2))
         }
         
         # Add to config
@@ -285,17 +292,29 @@ def api_add_stream():
 def api_remove_stream():
     """Remove a stream"""
     try:
-        data = request.json
+        data = request.get_json(force=True)
+        if not data or 'stream_id' not in data:
+            return jsonify({'success': False, 'error': 'stream_id required'}), 400
+
         stream_id = data['stream_id']
-        
-        # Stop stream
-        stop_stream(stream_id)
-        
+
+        # Stop stream (no-op if not running)
+        try:
+            stop_stream(stream_id)
+        except Exception as e:
+            # Log and continue removing from config
+            print(f"Error stopping stream {stream_id}: {e}")
+
         # Remove from config
-        config['streams'] = [s for s in config.get('streams', []) 
-                            if s['id'] != stream_id]
+        streams = config.get('streams', []) or []
+        new_streams = [s for s in streams if s.get('id') != stream_id]
+        if len(new_streams) == len(streams):
+            # stream id wasn't found in config -> return 404
+            return jsonify({'success': False, 'error': 'stream not found'}), 404
+
+        config['streams'] = new_streams
         save_config()
-        
+
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -304,24 +323,38 @@ def api_remove_stream():
 def api_toggle_stream():
     """Enable/disable a stream"""
     try:
-        data = request.json
+        data = request.get_json(force=True)
+        if not data or 'stream_id' not in data or 'enabled' not in data:
+            return jsonify({'success': False, 'error': 'stream_id and enabled required'}), 400
+
         stream_id = data['stream_id']
-        enabled = data['enabled']
-        
-        # Update config
+        enabled = bool(data['enabled'])
+
+        # Find stream in config
+        found = False
         for stream in config.get('streams', []):
-            if stream['id'] == stream_id:
+            if stream.get('id') == stream_id:
+                found = True
                 stream['enabled'] = enabled
-                
+
                 if enabled:
-                    start_stream(stream)
+                    try:
+                        start_stream(stream)
+                    except Exception as e:
+                        return jsonify({'success': False, 'error': f'failed to start stream: {e}'}), 500
                 else:
-                    stop_stream(stream_id)
-                
+                    try:
+                        stop_stream(stream_id)
+                    except Exception as e:
+                        # stopping should be best-effort
+                        print(f"Error stopping stream {stream_id}: {e}")
                 break
-        
+
+        if not found:
+            return jsonify({'success': False, 'error': 'stream not found'}), 404
+
         save_config()
-        
+
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -407,22 +440,41 @@ def api_settings():
     
     try:
         data = request.json
-        
         # Update config
         for key, value in data.items():
             if key in config:
                 config[key] = value
-        
+        # Update per-stream settings if present
+        if 'streams' in data:
+            config['streams'] = data['streams']
+            # Restart all streams with new settings
+            for stream in config['streams']:
+                if stream.get('enabled', True):
+                    start_stream(stream)
+                else:
+                    stop_stream(stream['id'])
         save_config()
-        
         # Restart services if needed
         if 'upload_speed_threshold_mbps' in data:
             if network_monitor:
                 network_monitor.set_threshold(data['upload_speed_threshold_mbps'])
-        
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+# ==================== Chunk Event API ====================
+
+@app.route('/api/chunk_events')
+def api_chunk_events():
+    """Return recent chunk events (filenames) for all streams."""
+    events = {}
+    chunk_dir = Path('tmp/chunks')
+    if chunk_dir.exists():
+        for chunk_file in sorted(chunk_dir.glob('*.mp4'), key=lambda f: f.stat().st_mtime, reverse=True)[:20]:
+            stream_id = chunk_file.name.split('_')[0]
+            if stream_id not in events:
+                events[stream_id] = []
+            events[stream_id].append(chunk_file.name)
+    return jsonify(events)
 
 # ==================== Main ====================
 

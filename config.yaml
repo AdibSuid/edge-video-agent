@@ -1,37 +1,27 @@
-cloud_srt_host: srt://your-cloud-server:9000
-# How the agent connects to the SRT endpoint. Options: caller, listener, rendezvous
-# - caller: agent connects out to the remote listener (recommended for NAT'd agents)
-# - listener: agent listens for inbound SRT connections
-# - rendezvous: both endpoints attempt a symmetric connection
-srt_mode: caller
-# Optional additional SRT params (will be appended as query params)
-srt_params: {}
-
-low_resolution: 640x360
-motion_cooldown: 10
-motion_high_fps: 25
-motion_low_fps: 1
-motion_min_area: 500
-motion_sensitivity: 25
-motion_zones: []
-normal_resolution: 1280x720
-srt_passphrase: your-secure-passphrase-here
-# Encoder bitrate settings (in bits per second)
-# default_bitrate: target bitrate while motion is active
-# low_bitrate: target bitrate when network is degraded or low-quality mode
-default_bitrate: 2000000
-low_bitrate: 400000
+cloud_srt_host: srt://example:9000?passphrase=pass&reconnect=10
+srt_passphrase: pass
 streams:
-- enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
   id: cam1
   name: backyard
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
-- enabled: true
+  rtsp_url: rtsp://1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
   id: cam2
   name: porch
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
-telegram_bot_token: ''
-telegram_chat_id: ''
-upload_speed_threshold_mbps: 2
-web_host: 0.0.0.0
-web_port: 5000
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: false
+  enabled: true
+  id: cam3
+  name: Camera 192.168.1.102
+  rtsp_url: rtsp://admin:password@192.168.1.102:554/stream
+  streaming_enabled: true
