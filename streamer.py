@@ -155,14 +155,9 @@ class Streamer:
         return int(self.config.get('motion_low_fps', 1))
 
     def _build_ffmpeg_command(self):
-        bitrate = self._get_target_bitrate()
-        if bitrate >= 1000000:
-            b_str = f"{bitrate // 1000000}M"
-        else:
-            b_str = f"{bitrate // 1000}k"
+        # Use the same command as manual test for direct RTSP to SRT streaming
         cmd = (
-            f"ffmpeg -rtsp_transport tcp -i {shlex.quote(self.rtsp_url)} -c:v libx264 "
-            f"-preset superfast -tune zerolatency -b:v {b_str} -f mpegts {shlex.quote(self.srt_target)}"
+            f"ffmpeg -re -i {shlex.quote(self.rtsp_url)} -c:v libx264 -preset ultrafast -f mpegts {shlex.quote(self.srt_target)}"
         )
         return shlex.split(cmd)
 

@@ -1,5 +1,5 @@
-cloud_srt_host: srt://example:9000?passphrase=pass&reconnect=10
-srt_passphrase: pass
+cloud_srt_host: srt://192.168.1.200:9000?mode=caller&passphrase=UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
+srt_passphrase: UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
 streams:
 - chunk_duration: 5
   chunk_fps: 2
