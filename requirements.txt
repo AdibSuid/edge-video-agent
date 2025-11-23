@@ -1,8 +1,20 @@
+
+# Web Framework
 Flask==3.0.0
+
+# Configuration
 PyYAML==6.0.1
+
+# Computer Vision & Motion Detection
 opencv-python==4.8.1.78
 numpy==1.24.3
-requests==2.31.0
+
+# ONVIF Camera Discovery
 onvif-zeep==0.2.12
-python-telegram-bot==20.7
+zeep==4.2.1
+
+# Network Monitoring & Telegram Alerts
 psutil==5.9.6
+requests==2.31.0
+
+# Utilities

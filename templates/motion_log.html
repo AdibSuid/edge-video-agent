@@ -18,6 +18,13 @@
         .log-motion { border-left-color: #28a745; }
         .log-idle { border-left-color: #6c757d; }
         .badge { font-size: 0.8em; }
+        #logContainer {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+        }
     </style>
 </head>
 <body>
@@ -37,7 +44,7 @@
             <div class="col">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Recent Events</h5>
+                        <h5 class="card-title">Recent Events (showing last 10, scroll for more)</h5>
                         <div id="logContainer">
                             {% if logs %}
                                 {% for log in logs %}
@@ -144,7 +151,9 @@
         loadEventTimeline();
 
         // Auto-refresh every 10 seconds
-        setInterval(refreshLog, 10000);
+        setInterval(() => {
+            refreshLog();
+        }, 10000);
     </script>
 </body>
 </html>

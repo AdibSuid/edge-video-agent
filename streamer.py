@@ -15,12 +15,14 @@ import time
 import queue
 from pathlib import Path
 import logging
+import json
+from datetime import datetime
 
 from motion_detector import MotionDetector
 
 
 class Streamer:
-    """Compact RTSP->SRT streamer with dynamic bitrate.
+    """Compact RTSP streamer with dynamic bitrate.
 
     Public methods used elsewhere: set_low_quality(enabled), restart_all()
     """
@@ -31,17 +33,8 @@ class Streamer:
     # path to ffmpeg if available on PATH (updated by autodetect)
     _ffmpeg_path = shutil.which('ffmpeg')
 
-    def __init__(self, rtsp_url, srt_url, passphrase, config, stream_id):
+    def __init__(self, rtsp_url, config, stream_id):
         self.rtsp_url = rtsp_url
-        srt_mode = config.get('srt_mode')
-        srt_params = config.get('srt_params') or {}
-        q = [f"passphrase={passphrase}"]
-        if srt_mode:
-            q.append(f"mode={srt_mode}")
-        for k, v in srt_params.items():
-            q.append(f"{k}={v}")
-        self.srt_target = srt_url + ('?' + '&'.join(q) if q else '')
-
         self.stream_id = stream_id
         self.config = config
         self.motion_active = False
@@ -75,6 +68,8 @@ class Streamer:
         # Start chunking thread if enabled
         threading.Thread(target=self._chunking_loop, daemon=True).start()
         # do not start external processes in constructor for test-safety
+    # SRT streaming logic removed for MediaMTX relay. Only RTSP and chunking remain.
+    
     def _chunking_loop(self):
         """Motion-triggered video chunking pipeline."""
         import cv2
@@ -105,6 +100,8 @@ class Streamer:
                 if frames:
                     # Save chunk to file
                     chunk_id = str(uuid.uuid4())[:8]
+                    ts_start = int(start_time)
+                    ts_end = int(time.time())
                     out_dir = Path('tmp/chunks')
                     out_dir.mkdir(parents=True, exist_ok=True)
                     out_path = out_dir / f"{self.stream_id}_{chunk_id}.mp4"
@@ -114,18 +111,28 @@ class Streamer:
                         writer.write(f)
                     writer.release()
                     self.logger.info(f"Chunk saved: {out_path}")
-                    # Upload to cloud (template)
-                    self._upload_chunk_to_cloud(out_path, chunk_id)
+                    # Upload to cloud
+                    self._upload_chunk_to_cloud(out_path, chunk_id, ts_start, ts_end)
             except Exception as e:
                 self.logger.error(f"Chunking error: {e}")
             time.sleep(0.5)
 
-    def _upload_chunk_to_cloud(self, chunk_path, chunk_id):
-        """Draft/template for cloud upload: S3 + SQS."""
-        # Replace with real S3/SQS integration when ready
-        # Example metadata: stream_id, chunk_id, s3_key
-        print(f"[UPLOAD TEMPLATE] Would upload {chunk_path} to S3 and send SQS msg: stream_id={self.stream_id}, chunk_id={chunk_id}")
-        self.logger.info(f"[UPLOAD TEMPLATE] Would upload {chunk_path} to S3 and send SQS msg: stream_id={self.stream_id}, chunk_id={chunk_id}")
+    def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
+        """Upload chunk to cloud server with authentication."""
+        try:
+            from cloud_uploader import cloud_uploader
+            
+            if cloud_uploader and cloud_uploader.enabled:
+                # Get camera name from config for stream_id
+                stream_name = self.config.get('name', self.stream_id)
+                
+                # Queue for upload (non-blocking)
+                cloud_uploader.queue_chunk(chunk_path, stream_name, ts_start, ts_end)
+                self.logger.info(f"Queued chunk for cloud upload: {chunk_path.name}")
+            else:
+                self.logger.debug(f"Cloud upload disabled or not configured")
+        except Exception as e:
+            self.logger.error(f"Error queuing chunk for upload: {e}")
 
     def _setup_logger(self):
         log_dir = Path('logs')
@@ -136,6 +143,38 @@ class Streamer:
         fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
         logger.addHandler(fh)
         return logger
+
+    def _log_motion_event(self, status, fps):
+        """Log motion event to JSON file for event tracking"""
+        try:
+            log_dir = Path('logs')
+            log_dir.mkdir(exist_ok=True)
+            event_file = log_dir / f'events_{self.stream_id}.json'
+            
+            event = {
+                'timestamp': datetime.now().isoformat(),
+                'status': status,
+                'fps': fps
+            }
+            
+            # Load existing events
+            events = []
+            if event_file.exists():
+                try:
+                    with open(event_file, 'r') as f:
+                        events = json.load(f)
+                except:
+                    events = []
+            
+            # Append new event and keep last 100 events
+            events.append(event)
+            events = events[-100:]
+            
+            # Save back to file
+            with open(event_file, 'w') as f:
+                json.dump(events, f, indent=2)
+        except Exception as e:
+            self.logger.error(f"Failed to log motion event: {e}")
 
     def _get_target_bitrate(self):
         if self._low_quality:
@@ -155,9 +194,16 @@ class Streamer:
         return int(self.config.get('motion_low_fps', 1))
 
     def _build_ffmpeg_command(self):
-        # Use the same command as manual test for direct RTSP to SRT streaming
+        # Build ffmpeg command with dynamic FPS and bitrate
+        target_fps = self._get_target_fps()
+        target_bitrate = self._get_target_bitrate()
+        
+        # Output to local file or pipe (no SRT)
         cmd = (
-            f"ffmpeg -re -i {shlex.quote(self.rtsp_url)} -c:v libx264 -preset ultrafast -f mpegts {shlex.quote(self.srt_target)}"
+            f"ffmpeg -re -rtsp_transport tcp -i {shlex.quote(self.rtsp_url)} "
+            f"-r {target_fps} -c:v libx264 -preset ultrafast -b:v {target_bitrate} "
+            f"-maxrate {target_bitrate} -bufsize {target_bitrate * 2} "
+            f"-g {target_fps * 2} -f mpegts pipe:1"
         )
         return shlex.split(cmd)
 
@@ -265,40 +311,89 @@ class Streamer:
     def _capture_loop(self):
         # lightweight capture loop used for motion detection
         import cv2
+        self.logger.info(f"Starting capture loop for {self.rtsp_url}")
         cap = cv2.VideoCapture(self.rtsp_url)
         if not cap.isOpened():
+            self.logger.error(f"Failed to open RTSP stream: {self.rtsp_url}")
             return
+        self.logger.info("RTSP stream opened successfully")
+        frame_count = 0
         while self.running:
             ret, frame = cap.read()
             if not ret:
+                self.logger.warning("Failed to read frame, retrying...")
                 time.sleep(0.5)
                 continue
+            frame_count += 1
+            if frame_count % 100 == 0:  # Log every 100 frames
+                self.logger.info(f"Captured {frame_count} frames")
             try:
                 if not self.frame_queue.full():
                     self.frame_queue.put(frame, block=False)
             except Exception:
                 pass
             time.sleep(0.01)
+        cap.release()
+        self.logger.info("Capture loop ended")
 
     def _motion_loop(self):
         last_bitrate = None
+        last_fps = None
+        last_motion_state = False
+        motion_frame_count = 0
+        no_motion_frame_count = 0
+        self.logger.info("Starting motion detection loop")
         while self.running:
             try:
                 frame = self.frame_queue.get(timeout=1)
             except queue.Empty:
                 self.motion_active = False
+                # self.logger.debug("No frames in queue, motion inactive")
                 time.sleep(0.5)
                 continue
+            
+            # Get raw motion detection result (before cooldown)
             motion = self.detector.detect(frame)
-            self.motion_active = motion
-            target = self._get_target_bitrate()
-            if last_bitrate is None:
-                last_bitrate = target
-            if target != last_bitrate:
-                self.logger.info(f"Bitrate change {last_bitrate}->{target}; restarting pipeline")
-                self._restart_pipeline()
-                last_bitrate = target
+            
+            # Track motion stats for debugging
+            if motion:
+                motion_frame_count += 1
+                no_motion_frame_count = 0
+            else:
+                no_motion_frame_count += 1
+                motion_frame_count = 0
+            
+            # Log when motion starts/stops being detected (not cooldown)
+            if motion_frame_count == 1:
+                self.logger.info("Motion STARTED being detected")
+            elif no_motion_frame_count == 1:
+                self.logger.info("Motion STOPPED being detected (cooldown may still be active)")
+            
+            # Only trigger pipeline restart when motion state actually changes
+            if motion != last_motion_state:
+                self.motion_active = motion
+                target_bitrate = self._get_target_bitrate()
+                target_fps = self._get_target_fps()
+                
+                if last_bitrate is None:
+                    last_bitrate = target_bitrate
+                    last_fps = target_fps
+                    # Initial state - start pipeline
+                    self.logger.info(f"Initial state: Motion={motion}, FPS {target_fps}, Bitrate {target_bitrate}")
+                    self._log_motion_event("MOTION" if motion else "IDLE", target_fps)
+                    self._restart_pipeline()
+                elif target_bitrate != last_bitrate or target_fps != last_fps:
+                    status = "Motion ACTIVE (high FPS)" if motion else "Motion INACTIVE (low FPS)"
+                    self.logger.info(f"{status}: FPS {last_fps}->{target_fps}, Bitrate {last_bitrate}->{target_bitrate}; restarting pipeline")
+                    self._log_motion_event("MOTION" if motion else "IDLE", target_fps)
+                    self._restart_pipeline()
+                    last_bitrate = target_bitrate
+                    last_fps = target_fps
+                
+                last_motion_state = motion
+            
             time.sleep(0.05)
+        self.logger.info("Motion detection loop ended")
 
     @classmethod
     def set_low_quality(cls, enabled: bool):

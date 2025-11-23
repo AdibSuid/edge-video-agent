@@ -1,0 +1,28 @@
+# Dockerfile for Raspberry Pi 5 (ARM64)
+FROM python:3.10-slim-bullseye
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set workdir
+WORKDIR /app
+
+# Copy requirements and source
+COPY requirements.txt ./
+COPY . .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose Flask port
+EXPOSE 5000
+
+# Start the app
+CMD ["python", "app.py"]

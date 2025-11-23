@@ -141,6 +141,37 @@ async function updateMotionStatus() {
     }
 }
 
+// Update cloud upload status
+async function updateCloudUploadStatus() {
+    try {
+        const response = await fetch('/api/cloud_upload_status');
+        const data = await response.json();
+        
+        const statusElement = document.getElementById('cloudUploadStatus');
+        const queueElement = document.getElementById('cloudUploadQueue');
+        
+        if (statusElement) {
+            if (data.enabled && data.authenticated) {
+                statusElement.className = 'badge bg-success';
+                statusElement.textContent = 'Connected';
+            } else if (data.enabled && !data.authenticated) {
+                statusElement.className = 'badge bg-warning';
+                statusElement.textContent = 'Auth Failed';
+            } else {
+                statusElement.className = 'badge bg-secondary';
+                statusElement.textContent = 'Disabled';
+            }
+        }
+        
+        if (queueElement) {
+            queueElement.textContent = data.queue_size || 0;
+        }
+        
+    } catch (error) {
+        console.error('Failed to update cloud upload status:', error);
+    }
+}
+
 // Remove stream
 async function removeStream(streamId) {
     if (!confirm('Remove this camera?')) {
@@ -203,3 +234,6 @@ async function toggleStream(streamId, button) {
         alert('Error toggling camera: ' + error);
     }
 }
+
+// Start polling for cloud upload status
+setInterval(updateCloudUploadStatus, 5000);

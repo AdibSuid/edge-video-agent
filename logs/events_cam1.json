@@ -1,11 +1,501 @@
 [
   {
-    "timestamp": "2025-11-17T00:57:41.168887",
+    "timestamp": "2025-11-23T17:28:39.298263",
     "status": "MOTION",
     "fps": 25
   },
   {
-    "timestamp": "2025-11-17T02:35:37.052874",
+    "timestamp": "2025-11-23T17:28:51.225537",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:33:08.250906",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:33:19.135115",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:35:09.870963",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:35:22.647936",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:47:08.650087",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:47:20.691357",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:54:32.534280",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:54:44.086981",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:56:55.558076",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:57:07.880836",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T17:59:04.972070",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T17:59:22.605661",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:01:06.472791",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:01:20.719089",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:02:10.556313",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:02:22.600513",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:05:05.340050",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:05:17.865722",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:06:52.145912",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:07:04.391331",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:07:17.941435",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:07:29.956909",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:08:30.613681",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:08:44.280384",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:12:56.556023",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:13:10.823231",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:15:06.479586",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:15:21.234470",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:16:05.786918",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:16:22.288155",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:19:46.186404",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:19:57.950557",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:20:48.161977",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:21:17.215745",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:22:14.472738",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:22:44.513543",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:23:30.629417",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:24:36.200107",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:24:46.224002",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:25:44.813935",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:26:03.610299",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:26:15.323235",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:27:31.017799",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:27:43.433588",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:28:50.927391",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:29:03.500638",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:30:28.661339",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:30:43.212959",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:34:35.535156",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:34:50.318368",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:35:30.760943",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:35:49.327033",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:36:28.041720",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:36:40.242508",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:37:47.443808",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:37:57.722692",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:41:12.345057",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:41:26.234594",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:47:11.124087",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:47:24.697386",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:48:33.328482",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:48:43.451557",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:50:26.289573",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:50:44.676559",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:51:30.507351",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:51:49.243867",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:55:00.727296",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:55:14.474092",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:56:58.365048",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:57:15.589584",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T18:58:03.420834",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T18:58:15.508578",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:00:37.090024",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:00:48.300378",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:02:30.530158",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:02:42.157105",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:04:30.910112",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:04:47.705061",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:06:33.924828",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:06:49.842311",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:08:03.022720",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:08:17.277692",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:09:38.881541",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:09:54.515035",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:11:50.229883",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:12:09.007106",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:12:57.658228",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:13:09.294869",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:13:22.780309",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:13:34.512706",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:26:29.605227",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:26:55.183696",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:27:05.725995",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:27:34.739184",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:29:23.114658",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:29:35.005218",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-23T19:46:35.172164",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-23T19:50:44.526680",
     "status": "MOTION",
     "fps": 25
   }

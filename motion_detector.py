@@ -57,7 +57,8 @@ class MotionDetector:
                 mask = np.zeros_like(thresh)
                 for zone in self.zones:
                     if len(zone) == 4:
-                        x, y, w, h = zone
+                        # Convert to integers to ensure valid slice indices
+                        x, y, w, h = int(zone[0]), int(zone[1]), int(zone[2]), int(zone[3])
                         # Ensure coordinates are within bounds
                         x = max(0, min(x, thresh.shape[1]))
                         y = max(0, min(y, thresh.shape[0]))

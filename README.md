@@ -9,13 +9,15 @@ A lightweight edge video surveillance agent that converts local CCTV streams to 
 - **Motion-Triggered Adaptive FPS**: 
   - **Idle**: 1 FPS (saves ~90% bandwidth)
   - **Motion**: 25 FPS (full quality)
+- **Cloud Video Upload**: Automatic chunk upload with bearer token authentication
 - **Secure Streaming**: AES-256 encrypted SRT streaming to cloud
 - **Network Monitoring**: Real-time upload speed tracking
 - **Adaptive Quality**: Automatic resolution reduction on slow connections
 - **Telegram Alerts**: Get notified of connectivity issues
-- **Web UI**: Easy-to-use browser interface
+- **Web UI**: Easy-to-use browser interface with cloud upload status
 - **Draggable Motion Zones**: Define specific areas for motion detection
 - **Event Logging**: Track all motion events with timeline visualization
+- **Upload Queue**: Automatic retry and queue management for cloud uploads
 - **Cross-Platform**: Works on Windows and Linux
 - **CPU-Only**: No GPU required (~15% CPU on 720p)
 
@@ -86,6 +88,12 @@ Edit `config.yaml` to configure the agent:
 cloud_srt_host: "srt://your-cloud-server:9000"
 srt_passphrase: "your-secure-passphrase-here"
 
+# Cloud Video Chunk Upload (Production)
+cloud_upload_url: "https://your-cloud-server.com"  # Production cloud server URL
+cloud_username: "your_username"                     # Cloud server username
+cloud_password: "your_password"                     # Cloud server password
+cloud_upload_enabled: true                          # Enable cloud upload
+
 # Video Quality
 normal_resolution: "1280x720"  # Normal quality
 low_resolution: "640x360"      # Low bandwidth mode
@@ -110,11 +118,203 @@ web_port: 5000
 web_host: "0.0.0.0"
 ```
 
+## ☁️ Cloud Upload Setup
+
+The agent automatically uploads motion-triggered video chunks to your cloud server with bearer token authentication.
+
+### Development/Testing with Mock Server
+
+For testing without a real cloud server:
+
+```bash
+# Terminal 1: Start mock cloud server
+python mock_cloud_server.py
+
+# Terminal 2: Update config.yaml
+cloud_upload_url: 'http://localhost:8000'
+cloud_username: tapway
+cloud_password: tapwaysuperadmin
+cloud_upload_enabled: true
+
+# Start edge agent
+python app.py
+```
+
+The mock server will save uploaded chunks to `mock_cloud_storage/` directory.
+
+### Production Setup with Real Cloud Server
+
+When your cloud server is ready:
+
+1. **Update `config.yaml`** with production credentials:
+```yaml
+cloud_upload_url: "https://your-production-server.com"
+cloud_username: "your_production_username"
+cloud_password: "your_production_password"
+cloud_upload_enabled: true
+```
+
+2. **Verify cloud server endpoints** are available:
+   - `POST /auth/login` - Authentication endpoint
+   - `POST /streams/upload-chunk` - Chunk upload endpoint
+
+3. **Expected API behavior:**
+   - **Authentication**: Returns `{"access_token": "..."}` with 1-hour expiry
+   - **Upload**: Accepts multipart form with `file`, `stream_id`, `ts_start`, `ts_end`
+   - **Authorization**: Bearer token in `Authorization` header
+
+4. **Monitor upload status** in the dashboard:
+   - **Connected** (green) - Uploading successfully
+   - **Auth Failed** (red) - Check credentials
+   - **Disabled** (gray) - Enable in config.yaml
+
+5. **Check logs** for upload activity:
+```bash
+tail -f logs/cloud_upload.log
+```
+
+### Cloud Upload Features
+
+- ✅ **Automatic authentication** with token refresh
+- ✅ **Upload queue** with retry logic
+- ✅ **Real-time status** in web dashboard
+- ✅ **Timestamp metadata** (ts_start, ts_end)
+- ✅ **Stream identification** (cam1, cam2, etc.)
+- ✅ **Error logging** for troubleshooting
+
+### Troubleshooting Cloud Upload
+
+**Queue growing:**
+- Check network connectivity to cloud server
+- Verify server is accepting uploads
+- Check logs for authentication errors
+
+**Auth Failed status:**
+- Verify username/password in config.yaml
+- Check cloud server `/auth/login` endpoint
+- Ensure server returns valid access_token
+
+**No uploads:**
+- Verify `cloud_upload_enabled: true`
+- Check motion detection is triggering
+- Verify chunks are being created in `tmp/chunks/`
+
 ## 📱 Telegram Setup (Optional)
 
 1. Create a bot with [@BotFather](https://t.me/botfather)
 2. Get your chat ID from [@userinfobot](https://t.me/userinfobot)
 3. Add credentials to `config.yaml`
+
+## 🚀 SRT Streaming to DeepStream Triton Inference
+
+This edge agent can stream video to NVIDIA DeepStream for real-time AI inference (object detection, tracking, analytics).
+
+### Architecture
+```
+Edge Agent → SRT Stream (encrypted) → DeepStream Server → Triton Inference → Analytics
+```
+
+### Configuration for DeepStream
+
+**1. Configure SRT Server in `config.yaml`:**
+```yaml
+# SRT Streaming to DeepStream Triton Inference Server
+cloud_srt_host: srt://192.168.1.200:9000  # DeepStream server IP
+srt_passphrase: UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
+srt_mode: caller  # Edge initiates connection
+srt_params:
+  latency: 200    # 200ms for real-time inference
+  maxbw: -1       # No bandwidth limit
+  pbkeylen: 16    # AES-128 encryption
+
+streams:
+  - id: cam1
+    srt_port: 9001  # Each camera gets unique port
+    streaming_enabled: true
+  - id: cam2
+    srt_port: 9002
+    streaming_enabled: true
+```
+
+**2. DeepStream Server Setup (Listener Mode):**
+
+On your DeepStream/Triton server, configure to listen on SRT ports:
+
+```python
+# DeepStream config (deepstream_app_config.txt)
+[source0]
+enable=1
+type=4  # SRT source
+uri=srt://0.0.0.0:9001?mode=listener&passphrase=UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
+
+[source1]
+enable=1
+type=4
+uri=srt://0.0.0.0:9002?mode=listener&passphrase=UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
+```
+
+**3. Test Connection:**
+```bash
+# On DeepStream server, test SRT listener:
+gst-launch-1.0 srtsrc uri="srt://:9001?mode=listener" ! decodebin ! autovideosink
+
+# On edge agent, start streaming:
+python app.py
+```
+
+### DeepStream Pipeline Integration
+
+**Multi-Stream Inference Example:**
+```python
+# Each edge camera streams to different port
+# DeepStream receives all streams and runs inference
+
+Edge Agent (cam1:9001) ──┐
+Edge Agent (cam2:9002) ──┼──→ DeepStream → Triton (YOLOv5/TAO) → Analytics
+Edge Agent (cam3:9003) ──┘
+```
+
+### Benefits of SRT + DeepStream
+
+- ✅ **Low Latency**: 200ms end-to-end with motion-triggered FPS
+- ✅ **Encrypted**: AES-128/256 encryption in transit
+- ✅ **Adaptive**: Automatic quality adjustment on slow networks
+- ✅ **Scalable**: Multiple cameras to single DeepStream instance
+- ✅ **Real-time**: 25 FPS during motion for AI inference
+- ✅ **Efficient**: 1 FPS idle mode saves bandwidth
+
+### Firewall Configuration
+
+**On DeepStream Server:**
+```bash
+# Allow SRT ports for each camera
+sudo ufw allow 9001/udp
+sudo ufw allow 9002/udp
+sudo ufw allow 9003/udp
+```
+
+**On Edge Agent (Windows):**
+```powershell
+# Test connectivity
+Test-NetConnection -ComputerName 192.168.1.200 -Port 9001
+```
+
+### Troubleshooting SRT Connection
+
+**Connection Refused:**
+- Verify DeepStream is running in listener mode
+- Check firewall allows UDP ports
+- Ensure passphrase matches on both sides
+
+**High Latency:**
+- Reduce `latency` parameter (100-200ms recommended)
+- Check network bandwidth with `iperf3`
+- Verify motion detection is working (should be 25 FPS during motion)
+
+**Stream Drops:**
+- Increase `maxbw` if limited
+- Check CPU usage on edge device
+- Monitor network quality in dashboard
 
 ## 🎥 Adding Cameras
 
@@ -226,11 +426,19 @@ edge-agent-motion/
 ├── motion_detector.py     # Motion detection
 ├── monitor.py             # Network monitoring
 ├── discovery.py           # ONVIF discovery
+├── cloud_uploader.py      # Cloud chunk upload with auth
 ├── config.yaml            # Configuration file
 ├── requirements.txt       # Python dependencies
 ├── install.sh            # Linux installer
 ├── install.bat           # Windows installer
-├── logs/                 # Motion event logs
+├── mock_cloud_server.py  # Testing server (optional)
+├── logs/                 # Motion event logs & upload logs
+│   ├── events_*.json     # Motion event data
+│   └── cloud_upload.log  # Upload activity log
+├── tmp/                  # Temporary storage
+│   ├── chunks/           # Video chunks before upload
+│   ├── buffer/           # Frame buffers
+│   └── received/         # SRT received chunks
 ├── templates/            # HTML templates
 │   ├── index.html
 │   ├── discover.html

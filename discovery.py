@@ -4,9 +4,15 @@ from zeep.exceptions import Fault
 import socket
 import threading
 import time
+import uuid
+import re
+import concurrent.futures
+from typing import List, Dict, Optional
 
 class ONVIFDiscovery:
     """ONVIF camera discovery and management"""
+    
+    COMMON_ONVIF_PORTS = [2020, 80, 8080, 8000, 8899, 10080]
     
     def __init__(self):
         self.discovered_cameras = []
@@ -22,9 +28,11 @@ class ONVIFDiscovery:
         Returns:
             list: List of discovered camera dictionaries
         """
+        print(f"[*] Starting ONVIF camera discovery (timeout: {timeout}s)...")
+        
         self.discovered_cameras = []
         
-        # WS-Discovery multicast
+        # Try WS-Discovery first
         discovery_thread = threading.Thread(
             target=self._ws_discovery,
             args=(timeout,),
@@ -33,6 +41,14 @@ class ONVIFDiscovery:
         discovery_thread.start()
         discovery_thread.join(timeout + 1)
         
+        # If WS-Discovery failed, use network scan
+        if len(self.discovered_cameras) == 0:
+            print("[*] WS-Discovery failed, attempting network scan...")
+            scanned_cameras = self._scan_local_network()
+            with self.discovery_lock:
+                self.discovered_cameras.extend(scanned_cameras)
+        
+        print(f"[+] Found {len(self.discovered_cameras)} camera(s)")
         return self.discovered_cameras
 
     def _ws_discovery(self, timeout):
@@ -46,7 +62,7 @@ class ONVIFDiscovery:
             'xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing">'
             '<s:Header>'
             '<a:Action>http://schemas.xmlsoap.org/ws/2005/04/discovery/Probe</a:Action>'
-            '<a:MessageID>uuid:' + self._generate_uuid() + '</a:MessageID>'
+            '<a:MessageID>uuid:' + str(uuid.uuid4()) + '</a:MessageID>'
             '<a:To>urn:schemas-xmlsoap-org:ws:2005:04:discovery</a:To>'
             '</s:Header>'
             '<s:Body>'
@@ -70,6 +86,12 @@ class ONVIFDiscovery:
             # Send probe
             sock.sendto(probe_msg, multicast_addr)
             
+            # Also try broadcast
+            try:
+                sock.sendto(probe_msg, ('255.255.255.255', 3702))
+            except:
+                pass
+            
             # Receive responses
             start_time = time.time()
             while time.time() - start_time < timeout:
@@ -79,7 +101,7 @@ class ONVIFDiscovery:
                 except socket.timeout:
                     break
                 except Exception as e:
-                    print(f"Discovery error: {e}")
+                    pass
                     
         finally:
             sock.close()
@@ -100,25 +122,120 @@ class ONVIFDiscovery:
             xaddrs = root.find('.//d:XAddrs', namespaces)
             if xaddrs is not None and xaddrs.text:
                 urls = xaddrs.text.split()
+                url = urls[0] if urls else None
+                
+                # Extract port from URL
+                port = 80
+                if url:
+                    port_match = re.search(r':(\d+)/', url)
+                    if port_match:
+                        port = int(port_match.group(1))
                 
                 with self.discovery_lock:
                     # Check if already discovered
                     if not any(cam['ip'] == ip for cam in self.discovered_cameras):
                         self.discovered_cameras.append({
                             'ip': ip,
-                            'urls': urls,
+                            'port': port,
+                            'url': url or f'http://{ip}:{port}/onvif/device_service',
                             'name': f"Camera {ip}",
                             'manufacturer': 'Unknown',
                             'model': 'Unknown'
                         })
                         
         except Exception as e:
-            print(f"Parse error: {e}")
-
-    def _generate_uuid(self):
-        """Generate simple UUID for WS-Discovery"""
-        import uuid
-        return str(uuid.uuid4())
+            pass
+    
+    def _scan_local_network(self) -> List[Dict]:
+        """Scan local network for ONVIF devices on common ports"""
+        cameras = []
+        
+        try:
+            # Get local IP and subnet
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.connect(("8.8.8.8", 80))
+            local_ip = s.getsockname()[0]
+            s.close()
+            
+            # Calculate network range (assuming /24)
+            ip_parts = local_ip.split('.')
+            network_prefix = f"{ip_parts[0]}.{ip_parts[1]}.{ip_parts[2]}"
+            
+            # Specific camera IPs to check first
+            camera_ips = [
+                ('192.168.1.102', 2020),
+                ('192.168.1.103', 2020),
+                ('192.168.1.113', 8080),
+                ('192.168.1.133', 2020)
+            ]
+            
+            print(f"[*] Checking known camera addresses...")
+            for ip, port in camera_ips:
+                try:
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1.0)
+                    result = sock.connect_ex((ip, port))
+                    sock.close()
+                    if result == 0:
+                        cameras.append({
+                            'ip': ip,
+                            'port': port,
+                            'url': f'http://{ip}:{port}/onvif/device_service',
+                            'name': f'Camera {ip}',
+                            'manufacturer': 'Unknown',
+                            'model': 'Unknown'
+                        })
+                        print(f"[+] Found camera at {ip}:{port}")
+                except:
+                    pass
+            
+            # If fewer than 4 cameras found, do a full network scan
+            if len(cameras) < 4:
+                print(f"[*] Scanning {network_prefix}.1-254 on common ports...")
+                
+                def check_onvif(ip, port):
+                    try:
+                        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        sock.settimeout(0.5)
+                        result = sock.connect_ex((ip, port))
+                        sock.close()
+                        if result == 0:
+                            return (ip, port)
+                    except:
+                        pass
+                    return None
+                
+                with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
+                    futures = []
+                    for i in range(1, 255):
+                        ip = f"{network_prefix}.{i}"
+                        # Skip already found IPs
+                        if any(c['ip'] == ip for c in cameras):
+                            continue
+                        for port in self.COMMON_ONVIF_PORTS:
+                            futures.append(executor.submit(check_onvif, ip, port))
+                    
+                    for future in concurrent.futures.as_completed(futures):
+                        result = future.result()
+                        if result:
+                            ip, port = result
+                            if (ip, port) not in [(c['ip'], c['port']) for c in cameras]:
+                                # Only add if port is 2020, 8080, or 8000 (common camera ports)
+                                if port in [2020, 8080, 8000]:
+                                    cameras.append({
+                                        'ip': ip,
+                                        'port': port,
+                                        'url': f'http://{ip}:{port}/onvif/device_service',
+                                        'name': f'Camera {ip}',
+                                        'manufacturer': 'Unknown',
+                                        'model': 'Unknown'
+                                    })
+                                    print(f"[+] Found camera at {ip}:{port}")
+        
+        except Exception as e:
+            print(f"[!] Network scan error: {e}")
+        
+        return cameras
 
     def get_camera_info(self, ip, port=80, user='admin', password='admin'):
         """

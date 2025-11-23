@@ -68,6 +68,22 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function showNotification(message, type = 'info') {
+            const alertDiv = document.createElement('div');
+            alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+            alertDiv.innerHTML = `
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            document.querySelector('.container').insertBefore(alertDiv, document.querySelector('.container').firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                alertDiv.classList.remove('show');
+                setTimeout(() => alertDiv.remove(), 150);
+            }, 5000);
+        }
+
         async function startDiscovery() {
             const btn = document.getElementById('discoverBtn');
             btn.classList.add('scanning');
@@ -83,6 +99,10 @@
 
                 if (data.success) {
                     displayCameras(data.cameras);
+                    if (data.filtered_count > 0) {
+                        const msg = `Note: ${data.filtered_count} camera(s) already added to the system were hidden from the list.`;
+                        showNotification(msg, 'info');
+                    }
                 } else {
                     alert('Discovery failed: ' + data.error);
                 }
@@ -146,13 +166,18 @@
                             <div class="col-md-8">
                                 <h6>${cam.name || cam.ip}</h6>
                                 <p class="mb-0 small text-muted">
-                                    IP: ${cam.ip}<br>
+                                    IP: ${cam.ip}${cam.port ? ':' + cam.port : ''}<br>
                                     Manufacturer: ${cam.manufacturer || 'Unknown'}
+                                    ${cam.model ? '<br>Model: ' + cam.model : ''}
                                 </p>
                             </div>
                             <div class="col-md-4 text-end">
+                                <button class="btn btn-sm btn-primary me-1" 
+                                        onclick="viewStream('${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
+                                    <i class="fas fa-video"></i> View
+                                </button>
                                 <button class="btn btn-sm btn-success" 
-                                        onclick="addCamera('${cam.ip}', '${cam.name || cam.ip}')">
+                                        onclick="addCamera('${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
                                     <i class="fas fa-plus"></i> Add
                                 </button>
                             </div>
@@ -162,13 +187,31 @@
             `).join('');
         }
 
-        function addCamera(ip, name) {
-            const rtspUrl = prompt(
-                `Enter RTSP URL for ${name}:`,
-                `rtsp://admin:password@${ip}:554/stream`
-            );
+        function viewStream(ip, port, name) {
+            // Open new window for viewing stream
+            const url = `/view_stream?ip=${ip}&port=${port}&name=${encodeURIComponent(name)}`;
+            window.open(url, '_blank');
+        }
 
-            if (rtspUrl) {
+        function addCamera(ip, port, name) {
+            // Create a modal-like dialog for credentials
+            const username = prompt(`Enter username for ${name}:`, 'orinnano');
+            if (!username) return;
+            
+            const password = prompt(`Enter password for ${name}:`, 'orinnano');
+            if (!password) return;
+            
+            // Ask for RTSP path/stream
+            const streamPath = prompt(
+                `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
+                '/stream1'
+            );
+            if (!streamPath) return;
+            
+            const rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
+            
+            // Show the constructed URL for confirmation
+            if (confirm(`Add camera with URL:\n${rtspUrl}\n\nClick OK to continue or Cancel to edit.`)) {
                 addStream(name, rtspUrl);
             }
         }

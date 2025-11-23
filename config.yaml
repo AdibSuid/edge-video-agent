@@ -1,27 +1,25 @@
-cloud_srt_host: srt://192.168.1.200:9000?mode=caller&passphrase=UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
-srt_passphrase: UuX7jgf7yWYRa6aMQ6y6w_d7mTMVtaK4CNEqENeZ0Hg
+cloud_password: tapwaysuperadmin
+cloud_upload_enabled: true
+cloud_upload_url: http://localhost:8000
+cloud_username: tapway
+motion_cooldown: 10
+motion_min_area: 2000
+motion_sensitivity: 50
+motion_zones: []
 streams:
-- chunk_duration: 5
-  chunk_fps: 2
-  chunking_enabled: true
-  enabled: true
-  id: cam1
-  name: backyard
-  rtsp_url: rtsp://1
-  streaming_enabled: true
-- chunk_duration: 5
-  chunk_fps: 2
-  chunking_enabled: true
-  enabled: true
-  id: cam2
-  name: porch
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
-  streaming_enabled: true
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: false
   enabled: true
   id: cam3
   name: Camera 192.168.1.102
-  rtsp_url: rtsp://admin:password@192.168.1.102:554/stream
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: false
+  enabled: true
+  id: cam2
+  name: Camera 192.168.1.133
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
   streaming_enabled: true

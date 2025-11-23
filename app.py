@@ -1,3 +1,4 @@
+
 # app.py
 from flask import Flask, render_template, request, jsonify
 import yaml
@@ -10,8 +11,26 @@ import time
 from streamer import Streamer
 from discovery import ONVIFDiscovery, scan_network_ports
 from monitor import NetworkMonitor, TelegramNotifier
+import cloud_uploader as cloud_uploader_module
+from cloud_uploader import init_cloud_uploader
 
 app = Flask(__name__)
+
+# Endpoint to expose all RTSP URLs for automation (MediaMTX integration)
+@app.route('/api/streams', methods=['GET'])
+def api_streams():
+    """Return all camera RTSP URLs and metadata as JSON."""
+    streams = config.get('streams', [])
+    # Return id, name, rtsp_url for each camera
+    return jsonify({
+        'streams': [
+            {
+                'id': s.get('id'),
+                'name': s.get('name'),
+                'rtsp_url': s.get('rtsp_url')
+            } for s in streams if s.get('enabled', True)
+        ]
+    })
 
 # Global state
 config = {}
@@ -30,8 +49,6 @@ def load_config():
     else:
         # Create default config
         config = {
-            'cloud_srt_host': 'srt://your-cloud-server:9000',
-            'srt_passphrase': 'your-secure-passphrase-here',
             'normal_resolution': '1280x720',
             'low_resolution': '640x360',
             'motion_sensitivity': 25,
@@ -68,6 +85,15 @@ def init_services():
     bot_token = config.get('telegram_bot_token', '')
     chat_id = config.get('telegram_chat_id', '')
     telegram_notifier = TelegramNotifier(bot_token, chat_id)
+    
+    # Cloud uploader
+    uploader = init_cloud_uploader(config)
+    if uploader.enabled:
+        print(f"Cloud upload enabled: {uploader.server_url}")
+        # Start upload queue processor
+        threading.Thread(target=process_upload_queue, daemon=True).start()
+    else:
+        print("Cloud upload disabled (configure cloud_upload_url, cloud_username, cloud_password)")
     
     # Start network quality monitor thread
     threading.Thread(target=monitor_network_quality, daemon=True).start()
@@ -119,6 +145,24 @@ def monitor_network_quality():
             print(f"Network quality monitor error: {e}")
             time.sleep(5)
 
+def process_upload_queue():
+    """Process cloud upload queue continuously"""
+    print("Upload queue processor thread started")
+    while True:
+        try:
+            uploader = cloud_uploader_module.cloud_uploader
+            if uploader and uploader.enabled:
+                status = uploader.get_queue_status()
+                if status['queue_size'] > 0:
+                    print(f"Processing upload queue ({status['queue_size']} items)...")
+                uploader.process_queue()
+            time.sleep(2)  # Process every 2 seconds
+        except Exception as e:
+            print(f"Upload queue processor error: {e}")
+            import traceback
+            traceback.print_exc()
+            time.sleep(5)
+
 def start_stream(stream):
     """Start a stream"""
     stream_id = stream['id']
@@ -135,15 +179,15 @@ def start_stream(stream):
         for key in ['streaming_enabled', 'chunking_enabled', 'chunk_duration', 'chunk_fps']:
             if key in stream:
                 streamer_config[key] = stream[key]
+
+        # For MediaMTX relay, just use RTSP URL
         streamer = Streamer(
             rtsp_url=stream['rtsp_url'],
-            srt_url=config['cloud_srt_host'],
-            passphrase=config['srt_passphrase'],
             config=streamer_config,
             stream_id=stream_id
         )
         streamers[stream_id] = streamer
-        print(f"Started stream: {stream_id} - {stream['name']}")
+        print(f"Started stream: {stream_id} - {stream['name']} -> {stream['rtsp_url']}")
     except Exception as e:
         print(f"Failed to start stream {stream_id}: {e}")
 
@@ -185,23 +229,44 @@ def motion_page():
 @app.route('/motion_log')
 def motion_log_page():
     """Motion event log page"""
-    # Collect logs from all streams
+    # Collect logs from all streams (from JSON event files)
     all_logs = []
     log_dir = Path('logs')
     
     if log_dir.exists():
-        for log_file in log_dir.glob('motion_*.log'):
+        for event_file in log_dir.glob('events_*.json'):
             try:
-                with open(log_file, 'r') as f:
-                    logs = f.readlines()[-50:]  # Last 50 lines
-                    all_logs.extend([{
-                        'stream': log_file.stem.replace('motion_', ''),
-                        'line': line.strip()
-                    } for line in logs])
+                with open(event_file, 'r') as f:
+                    events = json.load(f)
+                    stream_id = event_file.stem.replace('events_', '')
+                    # Get all events for scrolling
+                    for event in events:
+                        # Format: "2025-11-23 14:15:16 - MOTION - FPS: 25"
+                        timestamp = event['timestamp'].replace('T', ' ').split('.')[0]
+                        line = f"{timestamp} - {event['status']} - FPS: {event['fps']}"
+                        all_logs.append({
+                            'stream': stream_id,
+                            'line': line
+                        })
             except:
                 pass
     
+    # Sort by timestamp (most recent first)
+    all_logs.sort(key=lambda x: x['line'], reverse=True)
+    
     return render_template('motion_log.html', logs=all_logs)
+
+@app.route('/view_stream')
+def view_stream_page():
+    """Camera stream viewer page"""
+    camera_ip = request.args.get('ip', '')
+    camera_port = request.args.get('port', '80')
+    camera_name = request.args.get('name', 'Camera')
+    
+    return render_template('view_stream.html',
+                         camera_ip=camera_ip,
+                         camera_port=camera_port,
+                         camera_name=camera_name)
 
 # ==================== API Routes ====================
 
@@ -210,10 +275,24 @@ def api_discover():
     """Start ONVIF discovery"""
     try:
         cameras = discovery.discover_cameras(timeout=5)
+        
+        # Filter out cameras that are already added
+        existing_ips = set()
+        for stream in config.get('streams', []):
+            # Extract IP from RTSP URL
+            import re
+            match = re.search(r'@?(\d+\.\d+\.\d+\.\d+)', stream.get('rtsp_url', ''))
+            if match:
+                existing_ips.add(match.group(1))
+        
+        # Filter cameras
+        filtered_cameras = [cam for cam in cameras if cam['ip'] not in existing_ips]
+        
         return jsonify({
             'success': True,
-            'cameras': cameras,
-            'count': len(cameras)
+            'cameras': filtered_cameras,
+            'count': len(filtered_cameras),
+            'filtered_count': len(cameras) - len(filtered_cameras)
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
@@ -252,35 +331,119 @@ def api_test_rtsp():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/test_stream', methods=['POST'])
+def api_test_stream():
+    """Test camera stream with credentials"""
+    try:
+        data = request.json
+        rtsp_url = data.get('rtsp_url')
+        
+        import cv2
+        
+        # Test RTSP connection
+        cap = cv2.VideoCapture(rtsp_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        
+        is_valid = False
+        if cap.isOpened():
+            ret, frame = cap.read()
+            is_valid = ret and frame is not None
+            cap.release()
+        
+        return jsonify({
+            'success': True,
+            'valid': is_valid
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/stream_proxy')
+def api_stream_proxy():
+    """Proxy RTSP stream as MJPEG"""
+    rtsp_url = request.args.get('rtsp_url')
+    
+    if not rtsp_url:
+        return "No RTSP URL provided", 400
+    
+    import cv2
+    
+    def generate():
+        cap = cv2.VideoCapture(rtsp_url)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Encode frame as JPEG
+                ret, jpeg = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if not ret:
+                    continue
+                
+                # Yield frame in multipart format
+                yield (b'--frame\r\n'
+                       b'Content-Type: image/jpeg\r\n\r\n' + jpeg.tobytes() + b'\r\n')
+        finally:
+            cap.release()
+    
+    return app.response_class(generate(),
+                            mimetype='multipart/x-mixed-replace; boundary=frame')
+
 @app.route('/api/add_stream', methods=['POST'])
 def api_add_stream():
     """Add a new stream"""
     try:
         data = request.json
-        
+
+        # Validate username and password before adding
+        username = data.get('username', '')
+        password = data.get('password', '')
+        rtsp_url = data.get('rtsp_url', '')
+
+        # Attempt to open RTSP stream with credentials
+        import cv2
+        test_url = rtsp_url
+        if username and password:
+            # Insert credentials into RTSP URL if not present
+            import re
+            test_url = re.sub(r'rtsp://(?!.*@)', f'rtsp://{username}:{password}@', rtsp_url)
+
+        cap = cv2.VideoCapture(test_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        valid = False
+        if cap.isOpened():
+            ret, frame = cap.read()
+            valid = ret and frame is not None
+            cap.release()
+
+        if not valid:
+            return jsonify({'success': False, 'error': 'Invalid username or password for RTSP stream'}), 401
+
         # Generate stream ID
         stream_id = f"cam{len(config.get('streams', [])) + 1}"
-        
+
         stream = {
             'id': stream_id,
             'name': data.get('name', f'Camera {stream_id}'),
-            'rtsp_url': data['rtsp_url'],
+            'rtsp_url': test_url,
             'enabled': True,
             'streaming_enabled': data.get('streaming_enabled', True),
             'chunking_enabled': data.get('chunking_enabled', False),
             'chunk_duration': int(data.get('chunk_duration', 5)),
             'chunk_fps': int(data.get('chunk_fps', 2))
         }
-        
+
         # Add to config
         if 'streams' not in config:
             config['streams'] = []
         config['streams'].append(stream)
         save_config()
-        
+
         # Start stream
         start_stream(stream)
-        
+
         return jsonify({
             'success': True,
             'stream': stream
@@ -378,6 +541,16 @@ def api_motion_status():
             'fps': streamer._get_target_fps()
         }
     return jsonify(status)
+
+@app.route('/api/cloud_upload_status')
+def api_cloud_upload_status():
+    """Get cloud upload status"""
+    uploader = cloud_uploader_module.cloud_uploader
+    if uploader:
+        status = uploader.get_queue_status()
+        status['server_url'] = uploader.server_url if uploader.enabled else None
+        return jsonify(status)
+    return jsonify({'enabled': False, 'authenticated': False, 'queue_size': 0})
 
 @app.route('/api/save_zones', methods=['POST'])
 def api_save_zones():

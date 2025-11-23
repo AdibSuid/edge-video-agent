@@ -28,29 +28,26 @@
                         <form id="addCameraForm">
                             <div class="mb-3">
                                 <label for="cameraName" class="form-label">Camera Name</label>
-                                <input type="text" class="form-control" id="cameraName" 
-                                       placeholder="e.g., Front Door Camera" required>
+                                <input type="text" class="form-control" id="cameraName" placeholder="e.g., Front Door Camera" required>
                             </div>
-
                             <div class="mb-3">
-                                <label for="rtspUrl" class="form-label">RTSP URL</label>
-                                <input type="text" class="form-control" id="rtspUrl" 
-                                       placeholder="rtsp://username:password@192.168.1.100:554/stream" required>
-                                <small class="form-text text-muted">
-                                    Example: rtsp://admin:password@192.168.1.100:554/stream
-                                </small>
+                                <label for="cameraIp" class="form-label">Camera IP Address</label>
+                                <input type="text" class="form-control" id="cameraIp" placeholder="e.g., 192.168.1.100" required>
                             </div>
-
                             <div class="mb-3">
-                                <button type="button" class="btn btn-secondary" onclick="testRTSP()">
-                                    <i class="fas fa-vial"></i> Test Connection
-                                </button>
-                                <span id="testResult" class="ms-2"></span>
+                                <label for="username" class="form-label">Username</label>
+                                <input type="text" class="form-control" id="username" placeholder="e.g., admin" required>
                             </div>
-
-                            <hr>
-
-                            <button type="submit" class="btn btn-primary">
+                            <div class="mb-3">
+                                <label for="password" class="form-label">Password</label>
+                                <input type="password" class="form-control" id="password" placeholder="Camera password" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="streamPath" class="form-label">Stream Path</label>
+                                <input type="text" class="form-control" id="streamPath" placeholder="e.g., stream1" value="stream1" required>
+                                <small class="form-text text-muted">Common paths: stream1, live, cam/realmonitor</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary w-100">
                                 <i class="fas fa-save"></i> Add Camera
                             </button>
                         </form>
