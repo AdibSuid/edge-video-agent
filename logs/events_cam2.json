@@ -1,15 +1,5 @@
 [
   {
-    "timestamp": "2025-11-23T20:19:54.443304",
-    "status": "MOTION",
-    "fps": 25
-  },
-  {
-    "timestamp": "2025-11-23T20:20:09.558856",
-    "status": "IDLE",
-    "fps": 1
-  },
-  {
     "timestamp": "2025-11-23T20:20:22.964860",
     "status": "MOTION",
     "fps": 25
@@ -496,6 +486,16 @@
   },
   {
     "timestamp": "2025-11-23T21:52:33.947811",
+    "status": "IDLE",
+    "fps": 1
+  },
+  {
+    "timestamp": "2025-11-25T19:03:02.975690",
+    "status": "MOTION",
+    "fps": 25
+  },
+  {
+    "timestamp": "2025-11-25T19:03:21.243504",
     "status": "IDLE",
     "fps": 1
   }

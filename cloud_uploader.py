@@ -71,10 +71,11 @@ class CloudUploader:
             
             response = requests.post(
                 auth_url,
-                json={
+                data={
                     "username": self.username,
                     "password": self.password
                 },
+                headers={"Content-Type": "application/x-www-form-urlencoded", "accept": "application/json"},
                 timeout=10
             )
             
@@ -323,7 +324,6 @@ class CloudUploader:
                 'enabled': self.enabled,
                 'authenticated': self.access_token is not None
             }
-
 
 # Global instance (initialized in app.py)
 cloud_uploader = None

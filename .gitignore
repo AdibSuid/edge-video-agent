@@ -82,3 +82,5 @@ htmlcov/
 # Node / static (if present)
 node_modules/
 static/js/*.map
+
+.mp4
