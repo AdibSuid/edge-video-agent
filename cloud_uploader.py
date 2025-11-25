@@ -97,6 +97,46 @@ class CloudUploader:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Authentication error: {e}")
             return False
+        def authenticate(self) -> bool:
+            """
+            Authenticate with Samurai Inspector API and get access token
+            Returns:
+                bool: True if authentication successful
+            """
+            if not self.enabled:
+                self.logger.warning("Cloud upload not configured (missing server_url, username, or password)")
+                return False
+
+            # Samurai Inspector API auth endpoint
+            auth_url = f"{self.server_url}/auth/login"
+
+            try:
+                self.logger.info(f"Authenticating with {auth_url}...")
+                response = requests.post(
+                    auth_url,
+                    data={
+                        "username": self.username,
+                        "password": self.password
+                    },
+                    headers={"Content-Type": "application/x-www-form-urlencoded", "accept": "application/json"},
+                    timeout=10
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    self.access_token = data.get('access_token')
+                    if self.access_token:
+                        self.token_expiry = time.time() + 3600
+                        self.logger.info("Authentication successful")
+                        return True
+                    else:
+                        self.logger.error("No access_token in response")
+                        return False
+                else:
+                    self.logger.error(f"Authentication failed: {response.status_code} - {response.text}")
+                    return False
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Authentication error: {e}")
+                return False
     
     def _ensure_authenticated(self) -> bool:
         """Ensure we have a valid token, refresh if needed"""
@@ -174,6 +214,61 @@ class CloudUploader:
         except Exception as e:
             self.logger.error(f"Unexpected error during upload: {e}")
             return False
+        def upload_chunk(self, chunk_path: Path, stream_id: str, ts_start: int, ts_end: int) -> bool:
+            """
+            Upload a video chunk to Samurai Inspector API
+            Args:
+                chunk_path: Path to video chunk file
+                stream_id: Stream identifier (camera name)
+                ts_start: Start timestamp (Unix epoch)
+                ts_end: End timestamp (Unix epoch)
+            Returns:
+                bool: True if upload successful
+            """
+            if not self.enabled:
+                self.logger.debug("Cloud upload disabled")
+                return False
+            if not chunk_path.exists():
+                self.logger.error(f"Chunk file not found: {chunk_path}")
+                return False
+            if not self._ensure_authenticated():
+                self.logger.error("Failed to authenticate before upload")
+                return False
+            # Samurai Inspector API upload endpoint
+            upload_url = f"{self.server_url}/streams/upload-chunk"
+            try:
+                self.logger.info(f"Uploading {chunk_path.name} (stream={stream_id}, duration={ts_end-ts_start}s)")
+                files = {
+                    'file': (chunk_path.name, open(chunk_path, 'rb'), 'video/mp4')
+                }
+                data = {
+                    'stream_id': stream_id,
+                    'ts_start': str(ts_start),
+                    'ts_end': str(ts_end)
+                }
+                headers = {
+                    'Authorization': f'Bearer {self.access_token}'
+                }
+                response = requests.post(
+                    upload_url,
+                    headers=headers,
+                    data=data,
+                    files=files,
+                    timeout=30
+                )
+                files['file'][1].close()
+                if response.status_code == 200 or response.status_code == 201:
+                    self.logger.info(f"Upload successful: {chunk_path.name}")
+                    return True
+                else:
+                    self.logger.error(f"Upload failed: {response.status_code} - {response.text}")
+                    return False
+            except requests.exceptions.RequestException as e:
+                self.logger.error(f"Upload error: {e}")
+                return False
+            except Exception as e:
+                self.logger.error(f"Unexpected error during upload: {e}")
+                return False
     
     def queue_chunk(self, chunk_path: Path, stream_id: str, ts_start: int, ts_end: int):
         """Add chunk to upload queue"""

@@ -1,6 +1,7 @@
 cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
-cloud_upload_url: http://localhost:8000
+# cloud_upload_url: http://localhost:8000
+cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
 motion_cooldown: 10
 motion_min_area: 2000
