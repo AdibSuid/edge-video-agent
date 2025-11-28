@@ -193,26 +193,38 @@
             window.open(url, '_blank');
         }
 
-        function addCamera(ip, port, name) {
+        async function addCamera(ip, port, name) {
             // Create a modal-like dialog for credentials
             const username = prompt(`Enter username for ${name}:`, 'orinnano');
             if (!username) return;
-            
             const password = prompt(`Enter password for ${name}:`, 'orinnano');
             if (!password) return;
-            
-            // Ask for camera ID
             const cameraId = prompt(`Enter camera ID for ${name}:`, 'cam1');
             if (!cameraId) return;
 
-            // Ask for RTSP path/stream
-            const streamPath = prompt(
-                `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
-                '/stream1'
-            );
-            if (!streamPath) return;
+            // Try to get RTSP URI from ONVIF
+            let rtspUrl = null;
+            try {
+                const response = await fetch('/api/onvif_rtsp_uri', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ip, port, username, password })
+                });
+                const data = await response.json();
+                if (data.success && data.rtsp_url) {
+                    rtspUrl = data.rtsp_url;
+                }
+            } catch (err) {}
 
-            const rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
+            if (!rtspUrl) {
+                // Ask for RTSP path/stream if ONVIF fails
+                const streamPath = prompt(
+                    `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
+                    '/stream1'
+                );
+                if (!streamPath) return;
+                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
+            }
 
             // Show the constructed URL for confirmation
             if (confirm(`Add camera with ID: ${cameraId}\nURL:\n${rtspUrl}\n\nClick OK to continue or Cancel to edit.`)) {
