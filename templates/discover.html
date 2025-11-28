@@ -14,7 +14,46 @@
     </style>
 </head>
 <body>
-    <div class="container">
+        <div class="container">
+                <!-- Modal for camera credentials and info -->
+                <div class="modal fade" id="cameraModal" tabindex="-1" aria-labelledby="cameraModalLabel" aria-hidden="true">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="cameraModalLabel">Camera Details</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <form id="cameraForm">
+                                    <div class="mb-3">
+                                        <label for="modalCameraId" class="form-label">Camera ID</label>
+                                        <input type="text" class="form-control" id="modalCameraId" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="modalUsername" class="form-label">Username</label>
+                                        <input type="text" class="form-control" id="modalUsername" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="modalPassword" class="form-label">Password</label>
+                                        <input type="password" class="form-control" id="modalPassword" required>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label for="modalStreamPath" class="form-label">RTSP Stream Path (auto if possible)</label>
+                                        <input type="text" class="form-control" id="modalStreamPath" placeholder="e.g., /stream1" value="" required>
+                                    </div>
+                                    <input type="hidden" id="modalCameraIp">
+                                    <input type="hidden" id="modalCameraPort">
+                                    <input type="hidden" id="modalCameraName">
+                                </form>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-primary" id="modalAddBtn">Add Camera</button>
+                                <button type="button" class="btn btn-info" id="modalViewBtn">View Stream</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
         <div class="row mb-4">
             <div class="col">
                 <h1><i class="fas fa-search"></i> Discover Cameras</h1>
@@ -173,11 +212,11 @@
                             </div>
                             <div class="col-md-4 text-end">
                                 <button class="btn btn-sm btn-primary me-1" 
-                                        onclick="viewStream('${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
+                                        onclick="showCameraModal('view', '${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
                                     <i class="fas fa-video"></i> View
                                 </button>
                                 <button class="btn btn-sm btn-success" 
-                                        onclick="addCamera('${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
+                                        onclick="showCameraModal('add', '${cam.ip}', '${cam.port || 80}', '${cam.name || cam.ip}')">
                                     <i class="fas fa-plus"></i> Add
                                 </button>
                             </div>
@@ -187,15 +226,34 @@
             `).join('');
         }
 
-        async function viewStream(ip, port, name) {
-            // Prompt for credentials
-            const username = prompt(`Enter username for ${name}:`, 'orinnano');
-            if (!username) return;
-            const password = prompt(`Enter password for ${name}:`, 'orinnano');
-            if (!password) return;
 
-            // Try to get RTSP URI from ONVIF
+        // Show modal for camera actions
+        let cameraAction = null;
+        function showCameraModal(action, ip, port, name) {
+            cameraAction = action;
+            document.getElementById('modalCameraIp').value = ip;
+            document.getElementById('modalCameraPort').value = port;
+            document.getElementById('modalCameraName').value = name;
+            document.getElementById('modalCameraId').value = action === 'add' ? 'cam1' : '';
+            document.getElementById('modalUsername').value = '';
+            document.getElementById('modalPassword').value = '';
+            document.getElementById('modalStreamPath').value = '';
+            document.getElementById('modalAddBtn').style.display = action === 'add' ? 'inline-block' : 'none';
+            document.getElementById('modalViewBtn').style.display = action === 'view' ? 'inline-block' : 'none';
+            const modal = new bootstrap.Modal(document.getElementById('cameraModal'));
+            modal.show();
+        }
+
+        // Modal Add Camera
+        document.getElementById('modalAddBtn').onclick = async function() {
+            const ip = document.getElementById('modalCameraIp').value;
+            const port = document.getElementById('modalCameraPort').value;
+            const name = document.getElementById('modalCameraName').value;
+            const cameraId = document.getElementById('modalCameraId').value;
+            const username = document.getElementById('modalUsername').value;
+            const password = document.getElementById('modalPassword').value;
             let rtspUrl = null;
+            // Try ONVIF
             try {
                 const response = await fetch('/api/onvif_rtsp_uri', {
                     method: 'POST',
@@ -207,60 +265,42 @@
                     rtspUrl = data.rtsp_url;
                 }
             } catch (err) {}
-
             if (!rtspUrl) {
-                // Ask for RTSP path/stream if ONVIF fails
-                const streamPath = prompt(
-                    `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
-                    '/stream1'
-                );
-                if (!streamPath) return;
+                const streamPath = document.getElementById('modalStreamPath').value || '/stream1';
                 rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
             }
+            await addStream(cameraId, name, rtspUrl);
+            bootstrap.Modal.getInstance(document.getElementById('cameraModal')).hide();
+        };
 
-            // Open new window for viewing stream
+        // Modal View Stream
+        document.getElementById('modalViewBtn').onclick = async function() {
+            const ip = document.getElementById('modalCameraIp').value;
+            const port = document.getElementById('modalCameraPort').value;
+            const name = document.getElementById('modalCameraName').value;
+            const username = document.getElementById('modalUsername').value;
+            const password = document.getElementById('modalPassword').value;
+            let rtspUrl = null;
+            // Try ONVIF
+            try {
+                const response = await fetch('/api/onvif_rtsp_uri', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ip, port, username, password })
+                });
+                const data = await response.json();
+                if (data.success && data.rtsp_url) {
+                    rtspUrl = data.rtsp_url;
+                }
+            } catch (err) {}
+            if (!rtspUrl) {
+                const streamPath = document.getElementById('modalStreamPath').value || '/stream1';
+                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
+            }
             const url = `/view_stream?ip=${ip}&port=${port}&name=${encodeURIComponent(name)}&rtsp_url=${encodeURIComponent(rtspUrl)}`;
             window.open(url, '_blank');
-        }
-
-        async function addCamera(ip, port, name) {
-            // Create a modal-like dialog for credentials
-            const username = prompt(`Enter username for ${name}:`, 'orinnano');
-            if (!username) return;
-            const password = prompt(`Enter password for ${name}:`, 'orinnano');
-            if (!password) return;
-            const cameraId = prompt(`Enter camera ID for ${name}:`, 'cam1');
-            if (!cameraId) return;
-
-            // Try to get RTSP URI from ONVIF
-            let rtspUrl = null;
-            try {
-                const response = await fetch('/api/onvif_rtsp_uri', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ ip, port, username, password })
-                });
-                const data = await response.json();
-                if (data.success && data.rtsp_url) {
-                    rtspUrl = data.rtsp_url;
-                }
-            } catch (err) {}
-
-            if (!rtspUrl) {
-                // Ask for RTSP path/stream if ONVIF fails
-                const streamPath = prompt(
-                    `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
-                    '/stream1'
-                );
-                if (!streamPath) return;
-                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
-            }
-
-            // Show the constructed URL for confirmation
-            if (confirm(`Add camera with ID: ${cameraId}\nURL:\n${rtspUrl}\n\nClick OK to continue or Cancel to edit.`)) {
-                addStream(cameraId, name, rtspUrl);
-            }
-        }
+            bootstrap.Modal.getInstance(document.getElementById('cameraModal')).hide();
+        };
 
         async function addStream(name, rtspUrl) {
             try {
