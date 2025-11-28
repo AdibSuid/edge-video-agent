@@ -451,8 +451,8 @@ def api_add_stream():
         if not valid:
             return jsonify({'success': False, 'error': 'Invalid username or password for RTSP stream'}), 401
 
-    # Use provided camera ID or generate one
-    stream_id = data.get('id') or f"cam{len(config.get('streams', [])) + 1}"
+        # Use provided camera ID or generate one
+        stream_id = data.get('id') or f"cam{len(config.get('streams', [])) + 1}"
 
         stream = {
             'id': stream_id,
