@@ -187,9 +187,39 @@
             `).join('');
         }
 
-        function viewStream(ip, port, name) {
+        async function viewStream(ip, port, name) {
+            // Prompt for credentials
+            const username = prompt(`Enter username for ${name}:`, 'orinnano');
+            if (!username) return;
+            const password = prompt(`Enter password for ${name}:`, 'orinnano');
+            if (!password) return;
+
+            // Try to get RTSP URI from ONVIF
+            let rtspUrl = null;
+            try {
+                const response = await fetch('/api/onvif_rtsp_uri', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ ip, port, username, password })
+                });
+                const data = await response.json();
+                if (data.success && data.rtsp_url) {
+                    rtspUrl = data.rtsp_url;
+                }
+            } catch (err) {}
+
+            if (!rtspUrl) {
+                // Ask for RTSP path/stream if ONVIF fails
+                const streamPath = prompt(
+                    `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
+                    '/stream1'
+                );
+                if (!streamPath) return;
+                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
+            }
+
             // Open new window for viewing stream
-            const url = `/view_stream?ip=${ip}&port=${port}&name=${encodeURIComponent(name)}`;
+            const url = `/view_stream?ip=${ip}&port=${port}&name=${encodeURIComponent(name)}&rtsp_url=${encodeURIComponent(rtspUrl)}`;
             window.open(url, '_blank');
         }
 
