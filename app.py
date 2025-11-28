@@ -2,36 +2,6 @@
 
 # Place this route after app = Flask(__name__)
 
-@app.route('/api/change_camera_id', methods=['POST'])
-def api_change_camera_id():
-    """Change camera ID for a stream"""
-    try:
-        data = request.json
-        old_id = data.get('old_id')
-        new_id = data.get('new_id')
-        if not old_id or not new_id:
-            return jsonify({'success': False, 'error': 'Missing old_id or new_id'}), 400
-        # Check for duplicate
-        for s in config.get('streams', []):
-            if s['id'] == new_id:
-                return jsonify({'success': False, 'error': 'Camera ID already exists'}), 400
-        # Find and update
-        found = False
-        for s in config.get('streams', []):
-            if s['id'] == old_id:
-                s['id'] = new_id
-                found = True
-                break
-        if not found:
-            return jsonify({'success': False, 'error': 'Camera not found'}), 404
-        save_config()
-        # Also update running streamer
-        if old_id in streamers:
-            streamers[new_id] = streamers.pop(old_id)
-            streamers[new_id].id = new_id
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 # app.py
 from flask import Flask, render_template, request, jsonify
@@ -707,3 +677,34 @@ if __name__ == '__main__':
     
     # Run Flask app
     app.run(host=host, port=port, debug=False, threaded=True)
+
+@app.route('/api/change_camera_id', methods=['POST'])
+def api_change_camera_id():
+    """Change camera ID for a stream"""
+    try:
+        data = request.json
+        old_id = data.get('old_id')
+        new_id = data.get('new_id')
+        if not old_id or not new_id:
+            return jsonify({'success': False, 'error': 'Missing old_id or new_id'}), 400
+        # Check for duplicate
+        for s in config.get('streams', []):
+            if s['id'] == new_id:
+                return jsonify({'success': False, 'error': 'Camera ID already exists'}), 400
+        # Find and update
+        found = False
+        for s in config.get('streams', []):
+            if s['id'] == old_id:
+                s['id'] = new_id
+                found = True
+                break
+        if not found:
+            return jsonify({'success': False, 'error': 'Camera not found'}), 404
+        save_config()
+        # Also update running streamer
+        if old_id in streamers:
+            streamers[new_id] = streamers.pop(old_id)
+            streamers[new_id].id = new_id
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
