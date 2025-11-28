@@ -1,23 +1,4 @@
 # API to get RTSP URI from ONVIF
-@app.route('/api/onvif_rtsp_uri', methods=['POST'])
-def api_onvif_rtsp_uri():
-    """Get RTSP URI from ONVIF using credentials"""
-    try:
-        data = request.json
-        ip = data.get('ip')
-        port = int(data.get('port', 80))
-        username = data.get('username', '')
-        password = data.get('password', '')
-        if not ip or not username or not password:
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
-        info = discovery.get_camera_info(ip, port, username, password)
-        if info and info.get('stream_uris'):
-            # Return the first RTSP URI found
-            return jsonify({'success': True, 'rtsp_url': info['stream_uris'][0]})
-        else:
-            return jsonify({'success': False, 'error': 'Could not retrieve RTSP URI'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 # ...existing code...
 
 # Place this route after app = Flask(__name__)
