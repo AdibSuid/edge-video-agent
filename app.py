@@ -1,3 +1,7 @@
+# ...existing code...
+
+# Place this route after app = Flask(__name__)
+
 @app.route('/api/change_camera_id', methods=['POST'])
 def api_change_camera_id():
     """Change camera ID for a stream"""
