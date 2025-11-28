@@ -709,3 +709,30 @@ def api_change_camera_id():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/onvif_rtsp_uri', methods=['POST'])
+def api_onvif_rtsp_uri():
+    """Get RTSP URI from ONVIF using credentials"""
+    try:
+        data = request.json
+        ip = data.get('ip')
+        port = int(data.get('port', 80))
+        username = data.get('username', '')
+        password = data.get('password', '')
+        if not ip or not username or not password:
+            print(f"[ONVIF] Missing required fields: ip={ip}, username={username}, password={'***' if password else ''}")
+            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+        print(f"[ONVIF] Attempting RTSP URI retrieval for {ip}:{port} with user '{username}'")
+        info = discovery.get_camera_info(ip, port, username, password)
+        if info:
+            print(f"[ONVIF] Camera info: {info}")
+        if info and info.get('stream_uris'):
+            print(f"[ONVIF] RTSP URIs found: {info['stream_uris']}")
+            # Return the first RTSP URI found
+            return jsonify({'success': True, 'rtsp_url': info['stream_uris'][0]})
+        else:
+            print(f"[ONVIF] Could not retrieve RTSP URI for {ip}:{port}")
+            return jsonify({'success': False, 'error': 'Could not retrieve RTSP URI', 'details': info}), 200
+    except Exception as e:
+        print(f"[ONVIF] Exception: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
