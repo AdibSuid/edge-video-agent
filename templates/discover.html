@@ -201,30 +201,39 @@
             const password = prompt(`Enter password for ${name}:`, 'orinnano');
             if (!password) return;
             
+            // Ask for camera ID
+            const cameraId = prompt(`Enter camera ID for ${name}:`, 'cam1');
+            if (!cameraId) return;
+
             // Ask for RTSP path/stream
             const streamPath = prompt(
                 `Enter RTSP stream path for ${name}:\n(Common: /stream1, /stream, /Streaming/Channels/101)`,
                 '/stream1'
             );
             if (!streamPath) return;
-            
+
             const rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
-            
+
             // Show the constructed URL for confirmation
-            if (confirm(`Add camera with URL:\n${rtspUrl}\n\nClick OK to continue or Cancel to edit.`)) {
-                addStream(name, rtspUrl);
+            if (confirm(`Add camera with ID: ${cameraId}\nURL:\n${rtspUrl}\n\nClick OK to continue or Cancel to edit.`)) {
+                addStream(cameraId, name, rtspUrl);
             }
         }
 
         async function addStream(name, rtspUrl) {
             try {
+                // If called from addCamera, first arg is cameraId
+                let cameraId = null;
+                if (arguments.length === 3) {
+                    cameraId = arguments[0];
+                    name = arguments[1];
+                    rtspUrl = arguments[2];
+                }
+                const payload = cameraId ? { id: cameraId, name, rtsp_url: rtspUrl } : { name, rtsp_url: rtspUrl };
                 const response = await fetch('/api/add_stream', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({
-                        name: name,
-                        rtsp_url: rtspUrl
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 const data = await response.json();

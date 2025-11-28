@@ -1,4 +1,30 @@
 // dashboard.js - Frontend logic for Edge Agent Dashboard
+// Change camera ID
+async function changeCameraId(oldId) {
+    const input = document.getElementById('cameraIdInput-' + oldId);
+    if (!input) return;
+    const newId = input.value.trim();
+    if (!newId || newId === oldId) {
+        alert('Please enter a new unique camera ID.');
+        return;
+    }
+    try {
+        const response = await fetch('/api/change_camera_id', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ old_id: oldId, new_id: newId })
+        });
+        const data = await response.json();
+        if (data.success) {
+            alert('Camera ID updated!');
+            window.location.reload();
+        } else {
+            alert('Failed to update camera ID: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error updating camera ID: ' + error);
+    }
+}
 
 let uploadChart = null;
 

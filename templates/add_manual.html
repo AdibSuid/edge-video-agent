@@ -27,6 +27,11 @@
                     <div class="card-body">
                         <form id="addCameraForm">
                             <div class="mb-3">
+                                <label for="cameraId" class="form-label">Camera ID</label>
+                                <input type="text" class="form-control" id="cameraId" placeholder="e.g., cam1" required>
+                                <small class="form-text text-muted">Unique ID for this camera (e.g., cam1, cam2)</small>
+                            </div>
+                            <div class="mb-3">
                                 <label for="cameraName" class="form-label">Camera Name</label>
                                 <input type="text" class="form-control" id="cameraName" placeholder="e.g., Front Door Camera" required>
                             </div>
@@ -86,6 +91,7 @@
         document.getElementById('addCameraForm').addEventListener('submit', async (e) => {
             e.preventDefault();
 
+            const cameraId = document.getElementById('cameraId').value;
             const name = document.getElementById('cameraName').value;
             const rtspUrl = document.getElementById('rtspUrl').value;
 
@@ -94,6 +100,7 @@
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({
+                        id: cameraId,
                         name: name,
                         rtsp_url: rtspUrl
                     })

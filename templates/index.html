@@ -116,7 +116,11 @@
                             <div class="d-flex justify-content-between align-items-start">
                                 <div>
                                     <h5 class="card-title">{{ stream.name }}</h5>
-                                    <p class="card-text text-muted small">{{ stream.id }}</p>
+                                    <div class="mb-2">
+                                        <label for="cameraIdInput-{{ stream.id }}" class="form-label small">Camera ID:</label>
+                                        <input type="text" class="form-control form-control-sm d-inline-block w-auto" id="cameraIdInput-{{ stream.id }}" value="{{ stream.id }}" style="max-width:120px;">
+                                        <button class="btn btn-sm btn-primary ms-1" onclick="changeCameraId('{{ stream.id }}')">Save</button>
+                                    </div>
                                 </div>
                                 <div>
                                     <span class="badge bg-secondary motion-status">Idle (1fps)</span>
