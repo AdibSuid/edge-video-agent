@@ -6,20 +6,4 @@ motion_cooldown: 10
 motion_min_area: 2000
 motion_sensitivity: 50
 motion_zones: []
-streams:
-- chunk_duration: 5
-  chunk_fps: 2
-  chunking_enabled: true
-  enabled: true
-  id: cam1
-  name: Camera 192.168.1.103
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
-  streaming_enabled: true
-- chunk_duration: 5
-  chunk_fps: 2
-  chunking_enabled: true
-  enabled: true
-  id: cam2
-  name: Camera 192.168.1.102
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
-  streaming_enabled: true
+streams: []
