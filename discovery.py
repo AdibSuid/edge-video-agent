@@ -355,23 +355,7 @@ class ONVIFDiscovery:
     
     def _get_wsdl_dir(self):
         """Get the correct WSDL directory path for onvif-zeep"""
-        import os
-        import site
-        
-        # Get all site-packages directories
-        site_packages = site.getsitepackages()
-        
-        # Also check user site-packages
-        if site.ENABLE_USER_SITE:
-            site_packages.append(site.getusersitepackages())
-        
-        # Check for WSDL in each site-packages
-        for sp in site_packages:
-            wsdl_path = os.path.join(sp, 'wsdl')
-            if os.path.exists(os.path.join(wsdl_path, 'devicemgmt.wsdl')):
-                return wsdl_path
-        
-        # If not found, return None to use default (remote WSDL)
+        # Force remote WSDL download to avoid local file issues
         return None
     
     def _extract_rtsp_suffix(self, rtsp_url):
