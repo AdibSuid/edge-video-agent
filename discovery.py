@@ -251,26 +251,18 @@ class ONVIFDiscovery:
             dict: Camera information or None on failure
         """
         try:
-            # Try to find WSDL files
-            wsdl_dir = self._get_wsdl_dir()
-            
-            if wsdl_dir:
-                camera = ONVIFCamera(ip, port, user, password, wsdl_dir=wsdl_dir)
-            else:
-                camera = ONVIFCamera(ip, port, user, password)
+            camera = ONVIFCamera(ip, port, user, password)
             
             # Get device information
-            device_service = camera.create_devicemgmt_service()
+            device_service = camera.devicemgmt.create_devicemgmt_service()
             device_info = device_service.GetDeviceInformation()
             
             # Get media profiles
-            media_service = camera.create_media_service()
+            media_service = camera.media.create_media_service()
             profiles = media_service.GetProfiles()
             
-            # Get stream URIs with credentials embedded
+            # Get stream URIs
             stream_uris = []
-            profile_details = []
-            
             for profile in profiles:
                 try:
                     stream_setup = {
@@ -281,38 +273,8 @@ class ONVIFDiscovery:
                         'StreamSetup': stream_setup,
                         'ProfileToken': profile.token
                     })
-                    
-                    rtsp_url = str(uri.Uri)
-                    
-                    # Extract suffix and build complete URL with credentials
-                    suffix = self._extract_rtsp_suffix(rtsp_url)
-                    complete_url = self._build_rtsp_url(ip, user, password, suffix)
-                    
-                    stream_uris.append(complete_url)
-                    
-                    profile_info = {
-                        'name': str(profile.Name),
-                        'token': str(profile.token),
-                        'rtsp_url': rtsp_url,
-                        'rtsp_suffix': suffix,
-                        'complete_url': complete_url
-                    }
-                    
-                    # Try to get resolution
-                    try:
-                        if hasattr(profile, 'VideoEncoderConfiguration'):
-                            video_config = profile.VideoEncoderConfiguration
-                            if hasattr(video_config, 'Resolution'):
-                                profile_info['resolution'] = {
-                                    'width': video_config.Resolution.Width,
-                                    'height': video_config.Resolution.Height
-                                }
-                    except:
-                        pass
-                    
-                    profile_details.append(profile_info)
-                except Exception as e:
-                    print(f"Failed to get stream URI for profile {profile.token}: {e}")
+                    stream_uris.append(str(uri.Uri))
+                except:
                     pass
             
             return {
@@ -323,66 +285,12 @@ class ONVIFDiscovery:
                 'firmware': str(device_info.FirmwareVersion),
                 'serial': str(device_info.SerialNumber),
                 'stream_uris': stream_uris,
-                'profiles': profile_details
+                'profiles': [p.Name for p in profiles]
             }
             
         except Exception as e:
             print(f"Failed to get camera info for {ip}: {e}")
             return None
-    
-    def _get_wsdl_dir(self):
-        """Get the correct WSDL directory path for onvif-zeep"""
-        import os
-        
-        # Try to find WSDL files in common locations
-        possible_paths = [
-            '/home/raspberry/Documents/edge-video-agent/venv/lib/python3.4/site-packages/wsdl',
-            '/home/raspberry/Documents/edge-video-agent/venv/lib/python3.11/site-packages/wsdl',
-            '/usr/local/lib/python3.11/site-packages/wsdl',
-            '/usr/lib/python3/dist-packages/wsdl',
-        ]
-        
-        for path in possible_paths:
-            if os.path.exists(os.path.join(path, 'devicemgmt.wsdl')):
-                return path
-        
-        # If not found, return None to use default
-        return None
-    
-    def _extract_rtsp_suffix(self, rtsp_url):
-        """Extract the suffix/path from full RTSP URL"""
-        import re
-        
-        # Remove credentials if present
-        url = re.sub(r'rtsp://[^@]+@', 'rtsp://', rtsp_url)
-        
-        # Extract path after IP:PORT
-        match = re.search(r'rtsp://[^/]+/(.+)', url)
-        if match:
-            return match.group(1)
-        
-        # Return original URL if pattern not matched
-        return rtsp_url
-    
-    def _build_rtsp_url(self, ip, username, password, suffix, port=554):
-        """Build complete RTSP URL with credentials"""
-        import re
-        
-        # Handle suffix that might already contain port
-        if suffix.startswith('rtsp://'):
-            # Extract port if present in suffix
-            port_match = re.search(r':(\d+)/', suffix)
-            if port_match:
-                port = int(port_match.group(1))
-            # Extract just the path
-            suffix = self._extract_rtsp_suffix(suffix)
-        
-        # Ensure suffix starts with /
-        if not suffix.startswith('/'):
-            suffix = '/' + suffix
-        
-        # Build URL with credentials
-        return f"rtsp://{username}:{password}@{ip}:{port}{suffix}"
 
     def test_rtsp_url(self, rtsp_url, timeout=5):
         """

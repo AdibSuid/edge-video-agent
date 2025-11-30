@@ -25,7 +25,7 @@
                             </div>
                             <div class="modal-body">
                                 <form id="cameraForm">
-                                    <div class="mb-3" id="cameraIdField">
+                                    <div class="mb-3">
                                         <label for="modalCameraId" class="form-label">Camera ID</label>
                                         <input type="text" class="form-control" id="modalCameraId" required>
                                     </div>
@@ -37,8 +37,9 @@
                                         <label for="modalPassword" class="form-label">Password</label>
                                         <input type="password" class="form-control" id="modalPassword" required>
                                     </div>
-                                    <div class="alert alert-info mb-0">
-                                        <i class="fas fa-info-circle"></i> <strong>Auto-Detection:</strong> RTSP stream path will be automatically discovered via ONVIF.
+                                    <div class="mb-3">
+                                        <label for="modalStreamPath" class="form-label">RTSP Stream Path (auto if possible)</label>
+                                        <input type="text" class="form-control" id="modalStreamPath" placeholder="e.g., /stream1" value="" required>
                                     </div>
                                     <input type="hidden" id="modalCameraIp">
                                     <input type="hidden" id="modalCameraPort">
@@ -47,44 +48,12 @@
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                <button type="button" class="btn btn-primary" id="modalAddBtn"><i class="fas fa-plus"></i> Add Camera</button>
-                                <button type="button" class="btn btn-info" id="modalViewBtn"><i class="fas fa-video"></i> View Stream</button>
+                                <button type="button" class="btn btn-primary" id="modalAddBtn">Add Camera</button>
+                                <button type="button" class="btn btn-info" id="modalViewBtn">View Stream</button>
                             </div>
                         </div>
                     </div>
                 </div>
-
-        <!-- Stream Viewer Modal -->
-        <div class="modal fade" id="streamViewerModal" tabindex="-1" aria-labelledby="streamViewerModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-xl">
-                <div class="modal-content">
-                    <div class="modal-header">
-                        <h5 class="modal-title" id="streamViewerModalLabel">
-                            <i class="fas fa-video"></i> <span id="streamCameraName">Camera Stream</span>
-                        </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body">
-                        <div id="streamLoadingIndicator" class="text-center py-5">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <p class="mt-3">Connecting to camera...</p>
-                        </div>
-                        <div id="streamContainer" style="display: none;">
-                            <img id="streamImage" src="" alt="Camera Stream" class="img-fluid w-100" />
-                        </div>
-                        <div id="streamError" class="alert alert-danger" style="display: none;">
-                            <i class="fas fa-exclamation-triangle"></i> <span id="streamErrorMessage"></span>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
         <div class="row mb-4">
             <div class="col">
                 <h1><i class="fas fa-search"></i> Discover Cameras</h1>
@@ -138,21 +107,6 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Auto-detect and populate subnet on page load
-        window.addEventListener('DOMContentLoaded', () => {
-            // Try to get local network subnet automatically
-            fetch('/api/get_local_subnet')
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success && data.subnet) {
-                        document.getElementById('subnet').value = data.subnet;
-                    }
-                })
-                .catch(() => {
-                    // Keep default value if detection fails
-                });
-        });
-
         function showNotification(message, type = 'info') {
             const alertDiv = document.createElement('div');
             alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
@@ -167,45 +121,6 @@
                 alertDiv.classList.remove('show');
                 setTimeout(() => alertDiv.remove(), 150);
             }, 5000);
-        }
-
-        function showDialog(title, message, type = 'info') {
-            const modalId = 'dialogModal' + Date.now();
-            const iconMap = {
-                'success': 'fa-check-circle text-success',
-                'error': 'fa-times-circle text-danger',
-                'warning': 'fa-exclamation-triangle text-warning',
-                'info': 'fa-info-circle text-info'
-            };
-            const icon = iconMap[type] || iconMap['info'];
-            
-            const modalHtml = `
-                <div class="modal fade" id="${modalId}" tabindex="-1">
-                    <div class="modal-dialog modal-dialog-centered">
-                        <div class="modal-content">
-                            <div class="modal-header">
-                                <h5 class="modal-title"><i class="fas ${icon}"></i> ${title}</h5>
-                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                            </div>
-                            <div class="modal-body">
-                                ${message}
-                            </div>
-                            <div class="modal-footer">
-                                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">OK</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            document.body.insertAdjacentHTML('beforeend', modalHtml);
-            const modal = new bootstrap.Modal(document.getElementById(modalId));
-            modal.show();
-            
-            // Clean up after modal is hidden
-            document.getElementById(modalId).addEventListener('hidden.bs.modal', function() {
-                this.remove();
-            });
         }
 
         async function startDiscovery() {
@@ -228,10 +143,10 @@
                         showNotification(msg, 'info');
                     }
                 } else {
-                    showDialog('Discovery Failed', data.error, 'error');
+                    alert('Discovery failed: ' + data.error);
                 }
             } catch (error) {
-                showDialog('Discovery Error', error.toString(), 'error');
+                alert('Discovery error: ' + error);
             } finally {
                 btn.classList.remove('scanning');
                 btn.disabled = false;
@@ -262,10 +177,10 @@
                     }));
                     displayCameras(cameras);
                 } else {
-                    showDialog('Scan Failed', data.error, 'error');
+                    alert('Scan failed: ' + data.error);
                 }
             } catch (error) {
-                showDialog('Scan Error', error.toString(), 'error');
+                alert('Scan error: ' + error);
             } finally {
                 btn.classList.remove('scanning');
                 btn.disabled = false;
@@ -322,12 +237,9 @@
             document.getElementById('modalCameraId').value = action === 'add' ? 'cam1' : '';
             document.getElementById('modalUsername').value = '';
             document.getElementById('modalPassword').value = '';
-            
-            // Show/hide Camera ID field based on action
-            document.getElementById('cameraIdField').style.display = action === 'add' ? 'block' : 'none';
+            document.getElementById('modalStreamPath').value = '';
             document.getElementById('modalAddBtn').style.display = action === 'add' ? 'inline-block' : 'none';
             document.getElementById('modalViewBtn').style.display = action === 'view' ? 'inline-block' : 'none';
-            
             const modal = new bootstrap.Modal(document.getElementById('cameraModal'));
             modal.show();
         }
@@ -340,20 +252,8 @@
             const cameraId = document.getElementById('modalCameraId').value;
             const username = document.getElementById('modalUsername').value;
             const password = document.getElementById('modalPassword').value;
-            
-            if (!username || !password) {
-                showDialog('Missing Information', 'Please enter username and password', 'warning');
-                return;
-            }
-            
-            // Disable button and show loading
-            const btn = document.getElementById('modalAddBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding...';
-            
             let rtspUrl = null;
-            
-            // Try ONVIF to get RTSP URL automatically
+            // Try ONVIF
             try {
                 const response = await fetch('/api/onvif_rtsp_uri', {
                     method: 'POST',
@@ -363,22 +263,14 @@
                 const data = await response.json();
                 if (data.success && data.rtsp_url) {
                     rtspUrl = data.rtsp_url;
-                    console.log('RTSP URL retrieved via ONVIF:', rtspUrl);
                 }
-            } catch (err) {
-                console.error('ONVIF retrieval failed:', err);
-            }
-            
-            // Fallback to default if ONVIF failed
+            } catch (err) {}
             if (!rtspUrl) {
-                rtspUrl = `rtsp://${username}:${password}@${ip}:554/stream1`;
-                console.log('Using fallback RTSP URL:', rtspUrl);
+                const streamPath = document.getElementById('modalStreamPath').value || '/stream1';
+                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
             }
-            
             await addStream(cameraId, name, rtspUrl);
             bootstrap.Modal.getInstance(document.getElementById('cameraModal')).hide();
-            btn.disabled = false;
-            btn.innerHTML = 'Add Camera';
         };
 
         // Modal View Stream
@@ -388,20 +280,8 @@
             const name = document.getElementById('modalCameraName').value;
             const username = document.getElementById('modalUsername').value;
             const password = document.getElementById('modalPassword').value;
-            
-            if (!username || !password) {
-                showDialog('Missing Information', 'Please enter username and password', 'warning');
-                return;
-            }
-            
-            // Disable button and show loading
-            const btn = document.getElementById('modalViewBtn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Connecting...';
-            
             let rtspUrl = null;
-            
-            // Try ONVIF to get RTSP URL automatically
+            // Try ONVIF
             try {
                 const response = await fetch('/api/onvif_rtsp_uri', {
                     method: 'POST',
@@ -411,94 +291,16 @@
                 const data = await response.json();
                 if (data.success && data.rtsp_url) {
                     rtspUrl = data.rtsp_url;
-                    console.log('RTSP URL retrieved via ONVIF:', rtspUrl);
-                } else {
-                    showDialog('ONVIF Failed', 'Could not retrieve stream via ONVIF. Please check credentials.', 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
-                    return;
                 }
-            } catch (err) {
-                console.error('ONVIF retrieval failed:', err);
-                showDialog('Connection Error', 'Failed to connect to camera: ' + err.toString(), 'error');
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
-                return;
+            } catch (err) {}
+            if (!rtspUrl) {
+                const streamPath = document.getElementById('modalStreamPath').value || '/stream1';
+                rtspUrl = `rtsp://${username}:${password}@${ip}:554${streamPath}`;
             }
-            
-            // Close credentials modal and open stream viewer
+            const url = `/view_stream?ip=${ip}&port=${port}&name=${encodeURIComponent(name)}&rtsp_url=${encodeURIComponent(rtspUrl)}`;
+            window.open(url, '_blank');
             bootstrap.Modal.getInstance(document.getElementById('cameraModal')).hide();
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
-            
-            // Show stream in modal
-            openStreamViewer(name, rtspUrl);
         };
-
-        function openStreamViewer(cameraName, rtspUrl) {
-            // Set camera name
-            document.getElementById('streamCameraName').textContent = cameraName;
-            
-            // Reset states
-            document.getElementById('streamLoadingIndicator').style.display = 'block';
-            document.getElementById('streamContainer').style.display = 'none';
-            document.getElementById('streamError').style.display = 'none';
-            
-            // Open modal
-            const streamModal = new bootstrap.Modal(document.getElementById('streamViewerModal'));
-            streamModal.show();
-            
-            // Test stream and start viewing
-            testAndStartStream(rtspUrl);
-        }
-
-        async function testAndStartStream(rtspUrl) {
-            try {
-                // Test if stream is accessible
-                const testResponse = await fetch('/api/test_stream', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ rtsp_url: rtspUrl })
-                });
-                
-                const testData = await testResponse.json();
-                
-                if (!testData.success || !testData.valid) {
-                    document.getElementById('streamLoadingIndicator').style.display = 'none';
-                    document.getElementById('streamError').style.display = 'block';
-                    document.getElementById('streamErrorMessage').textContent = 'Stream test failed: ' + (testData.error || 'Camera not accessible');
-                    return;
-                }
-                
-                // Start streaming
-                const streamUrl = `/api/stream_proxy?rtsp_url=${encodeURIComponent(rtspUrl)}&t=${Date.now()}`;
-                const streamImg = document.getElementById('streamImage');
-                
-                streamImg.onload = function() {
-                    document.getElementById('streamLoadingIndicator').style.display = 'none';
-                    document.getElementById('streamContainer').style.display = 'block';
-                };
-                
-                streamImg.onerror = function() {
-                    document.getElementById('streamLoadingIndicator').style.display = 'none';
-                    document.getElementById('streamError').style.display = 'block';
-                    document.getElementById('streamErrorMessage').textContent = 'Failed to load stream. Please check camera connection.';
-                };
-                
-                streamImg.src = streamUrl;
-                
-            } catch (error) {
-                document.getElementById('streamLoadingIndicator').style.display = 'none';
-                document.getElementById('streamError').style.display = 'block';
-                document.getElementById('streamErrorMessage').textContent = 'Error: ' + error.toString();
-            }
-        }
-
-        // Clean up stream when modal is closed
-        document.getElementById('streamViewerModal').addEventListener('hidden.bs.modal', function() {
-            const streamImg = document.getElementById('streamImage');
-            streamImg.src = '';
-        });
 
         async function addStream(name, rtspUrl) {
             try {
@@ -519,13 +321,13 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    showDialog('Success', 'Camera added successfully!', 'success');
-                    setTimeout(() => { window.location.href = '/'; }, 1500);
+                    alert('Camera added successfully!');
+                    window.location.href = '/';
                 } else {
-                    showDialog('Failed', 'Failed to add camera: ' + data.error, 'error');
+                    alert('Failed to add camera: ' + data.error);
                 }
             } catch (error) {
-                showDialog('Error', 'Error adding camera: ' + error.toString(), 'error');
+                alert('Error adding camera: ' + error);
             }
         }
     </script>

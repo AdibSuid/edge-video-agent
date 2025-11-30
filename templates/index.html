@@ -87,6 +87,9 @@
                     <a href="/discover" class="btn btn-primary">
                         <i class="fas fa-search"></i> Discover Cameras
                     </a>
+                    <a href="/add_manual" class="btn btn-success">
+                        <i class="fas fa-plus"></i> Add Manual
+                    </a>
                     <a href="/motion" class="btn btn-info">
                         <i class="fas fa-cog"></i> Motion Settings
                     </a>
@@ -187,7 +190,7 @@ function updateStreamSetting(streamId, key, value) {
             })
         })
     }).then(r => r.json()).then(d => {
-        if (!d.success) showDialog('Update Failed', 'Failed to update stream setting: ' + (d.error || 'Unknown error'), 'error');
+        if (!d.success) alert('Failed to update stream setting: ' + (d.error || 'Unknown error'));
     });
 }
 window.streams = {{ streams|tojson }};
