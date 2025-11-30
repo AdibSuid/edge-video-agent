@@ -6,4 +6,12 @@ motion_cooldown: 10
 motion_min_area: 2000
 motion_sensitivity: 50
 motion_zones: []
-streams: []
+streams:
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
+  id: cam1
+  name: Camera 192.168.0.130
+  rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
+  streaming_enabled: true

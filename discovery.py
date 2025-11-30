@@ -239,7 +239,7 @@ class ONVIFDiscovery:
 
     def get_camera_info(self, ip, port=80, user='admin', password='admin'):
         """
-        Get detailed camera information via ONVIF
+        Get detailed camera information via ONVIF (same as ONVIF Device Manager)
         
         Args:
             ip: Camera IP address
@@ -251,12 +251,20 @@ class ONVIFDiscovery:
             dict: Camera information or error dict on failure
         """
         try:
-            # Try to find WSDL files
-            wsdl_dir = self._get_wsdl_dir()
+            # Get WSDL directory from onvif package
+            import os
+            import onvif
+            onvif_dir = os.path.dirname(onvif.__file__)
+            wsdl_dir = os.path.join(onvif_dir, 'wsdl')
             
-            if wsdl_dir:
+            print(f"[ONVIF] Connecting to {ip}:{port} with user '{user}'")
+            
+            # Create ONVIF camera connection with WSDL files
+            if os.path.exists(wsdl_dir):
+                print(f"[ONVIF] Using WSDL directory: {wsdl_dir}")
                 camera = ONVIFCamera(ip, port, user, password, wsdl_dir=wsdl_dir)
             else:
+                print(f"[ONVIF] WSDL not found, trying without WSDL")
                 camera = ONVIFCamera(ip, port, user, password)
             
             # Get device information
@@ -346,18 +354,85 @@ class ONVIFDiscovery:
                     'details': f"{fault_code}: {fault_string}"
                 }
         except Exception as e:
-            print(f"Failed to get camera info for {ip}: {e}")
-            return {
-                'error': 'connection',
-                'message': f'Connection failed: {str(e)}',
-                'details': str(e)
-            }
+            print(f"[ONVIF] Failed: {e}")
+            print(f"[ONVIF] Trying fallback method with common RTSP paths")
+            
+            # Try common RTSP URLs as fallback
+            return self._try_common_rtsp_urls(ip, user, password)
     
-    def _get_wsdl_dir(self):
-        """Get the correct WSDL directory path for onvif-zeep"""
-        # Force remote WSDL download to avoid local file issues
-        return None
-    
+    def _try_common_rtsp_urls(self, ip, username, password):
+        """
+        Try common RTSP URL patterns when ONVIF fails
+        
+        Args:
+            ip: Camera IP address
+            username: Username
+            password: Password
+            
+        Returns:
+            dict: Camera info with working RTSP URL or error
+        """
+        import cv2
+        
+        # Common RTSP URL patterns for various camera brands
+        common_paths = [
+            '/stream1',           # Generic
+            '/Streaming/Channels/101',  # Hikvision
+            '/cam/realmonitor?channel=1&subtype=0',  # Dahua
+            '/live/ch00_0',       # TP-Link
+            '/h264Preview_01_main',  # Foscam
+            '/video.mp4',         # Generic MP4
+            '/media/video1',      # Axis
+            '/live.sdp',          # Generic SDP
+            '/videoMain',         # Generic
+            '/11',                # Some Chinese cameras
+            '/1',                 # Simple path
+        ]
+        
+        print(f"[RTSP Fallback] Testing common RTSP paths for {ip}")
+        
+        for path in common_paths:
+            for rtsp_port in [554, 8554]:  # Try common RTSP ports
+                rtsp_url = f"rtsp://{username}:{password}@{ip}:{rtsp_port}{path}"
+                print(f"[RTSP Fallback] Testing: rtsp://{username}:***@{ip}:{rtsp_port}{path}")
+                
+                try:
+                    cap = cv2.VideoCapture(rtsp_url)
+                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 3000)  # 3 second timeout
+                    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                    
+                    if cap.isOpened():
+                        ret, frame = cap.read()
+                        cap.release()
+                        
+                        if ret and frame is not None:
+                            print(f"[RTSP Fallback] Success! Working URL found: {path} on port {rtsp_port}")
+                            return {
+                                'ip': ip,
+                                'port': rtsp_port,
+                                'manufacturer': 'Unknown',
+                                'model': 'Unknown (fallback method)',
+                                'firmware': 'Unknown',
+                                'serial': 'Unknown',
+                                'stream_uris': [rtsp_url],
+                                'profiles': [{
+                                    'name': 'Main Stream',
+                                    'rtsp_url': rtsp_url,
+                                    'complete_url': rtsp_url
+                                }]
+                            }
+                    cap.release()
+                except Exception as e:
+                    pass
+        
+        # If all attempts failed
+        print(f"[RTSP Fallback] All common paths failed for {ip}")
+        return {
+            'error': 'auth',
+            'message': 'Could not find working RTSP stream. Please verify credentials.',
+            'details': 'Tried ONVIF and common RTSP paths without success'
+        }
+
     def _extract_rtsp_suffix(self, rtsp_url):
         """Extract the suffix/path from full RTSP URL"""
         import re

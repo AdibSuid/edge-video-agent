@@ -349,9 +349,10 @@
             // Disable button and show loading
             const btn = document.getElementById('modalAddBtn');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding...';
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Retrieving stream...';
             
             let rtspUrl = null;
+            let errorMsg = null;
             
             // Try ONVIF to get RTSP URL automatically
             try {
@@ -361,24 +362,42 @@
                     body: JSON.stringify({ ip, port, username, password })
                 });
                 const data = await response.json();
+                
                 if (data.success && data.rtsp_url) {
                     rtspUrl = data.rtsp_url;
                     console.log('RTSP URL retrieved via ONVIF:', rtspUrl);
+                } else {
+                    errorMsg = data.error || 'Failed to get RTSP URL via ONVIF';
+                    console.error('ONVIF failed:', errorMsg);
+                    
+                    // Check if authentication error
+                    if (response.status === 401) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-plus"></i> Add Camera';
+                        showDialog('Authentication Failed', 'Invalid username or password. Please check credentials.', 'error');
+                        return;
+                    }
                 }
             } catch (err) {
-                console.error('ONVIF retrieval failed:', err);
+                console.error('ONVIF retrieval exception:', err);
+                errorMsg = err.toString();
             }
             
-            // Fallback to default if ONVIF failed
+            // If ONVIF failed, show error
             if (!rtspUrl) {
-                rtspUrl = `rtsp://${username}:${password}@${ip}:554/stream1`;
-                console.log('Using fallback RTSP URL:', rtspUrl);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-plus"></i> Add Camera';
+                showDialog('Connection Failed', `Could not connect to camera: ${errorMsg}. Please verify camera IP, port, and credentials.`, 'error');
+                return;
             }
             
+            // Add the stream
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Adding camera...';
             await addStream(cameraId, name, rtspUrl);
+            
             bootstrap.Modal.getInstance(document.getElementById('cameraModal')).hide();
             btn.disabled = false;
-            btn.innerHTML = 'Add Camera';
+            btn.innerHTML = '<i class="fas fa-plus"></i> Add Camera';
         };
 
         // Modal View Stream
@@ -400,6 +419,7 @@
             btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Connecting...';
             
             let rtspUrl = null;
+            let errorMsg = null;
             
             // Try ONVIF to get RTSP URL automatically
             try {
@@ -409,20 +429,32 @@
                     body: JSON.stringify({ ip, port, username, password })
                 });
                 const data = await response.json();
+                
                 if (data.success && data.rtsp_url) {
                     rtspUrl = data.rtsp_url;
                     console.log('RTSP URL retrieved via ONVIF:', rtspUrl);
                 } else {
-                    showDialog('ONVIF Failed', 'Could not retrieve stream via ONVIF. Please check credentials.', 'error');
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
-                    return;
+                    errorMsg = data.error || 'Failed to retrieve stream';
+                    console.error('ONVIF failed:', errorMsg);
+                    
+                    // Check if authentication error
+                    if (response.status === 401) {
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
+                        showDialog('Authentication Failed', 'Invalid username or password. Please check credentials.', 'error');
+                        return;
+                    }
                 }
             } catch (err) {
-                console.error('ONVIF retrieval failed:', err);
-                showDialog('Connection Error', 'Failed to connect to camera: ' + err.toString(), 'error');
+                console.error('ONVIF retrieval exception:', err);
+                errorMsg = err.toString();
+            }
+            
+            // If ONVIF failed, show error
+            if (!rtspUrl) {
                 btn.disabled = false;
                 btn.innerHTML = '<i class="fas fa-video"></i> View Stream';
+                showDialog('Connection Failed', `Could not connect to camera: ${errorMsg}. Please verify camera IP, port, and credentials.`, 'error');
                 return;
             }
             

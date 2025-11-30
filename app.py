@@ -395,30 +395,44 @@ def api_add_stream():
     """Add a new stream"""
     try:
         data = request.json
-
-        # Validate username and password before adding
-        username = data.get('username', '')
-        password = data.get('password', '')
         rtsp_url = data.get('rtsp_url', '')
+        
+        if not rtsp_url:
+            return jsonify({'success': False, 'error': 'RTSP URL is required'}), 400
 
-        # Attempt to open RTSP stream with credentials
+        # The rtsp_url should already have credentials embedded from ONVIF or manual entry
+        # Test the stream before adding
         import cv2
-        test_url = rtsp_url
-        if username and password:
-            # Insert credentials into RTSP URL if not present
-            import re
-            test_url = re.sub(r'rtsp://(?!.*@)', f'rtsp://{username}:{password}@', rtsp_url)
-
-        cap = cv2.VideoCapture(test_url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        print(f"[ADD_STREAM] Testing RTSP URL: {rtsp_url[:30]}...")
+        
+        cap = cv2.VideoCapture(rtsp_url)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        
         valid = False
+        error_msg = None
+        
         if cap.isOpened():
+            # Try to read a frame
             ret, frame = cap.read()
-            valid = ret and frame is not None
+            if ret and frame is not None:
+                valid = True
+                print(f"[ADD_STREAM] Stream validation successful")
+            else:
+                # Give it another try
+                time.sleep(0.5)
+                ret, frame = cap.read()
+                valid = ret and frame is not None
+                if not valid:
+                    error_msg = 'Could not read frame from camera'
+                    print(f"[ADD_STREAM] Failed to read frame")
             cap.release()
+        else:
+            error_msg = 'Could not open RTSP stream - check credentials and network'
+            print(f"[ADD_STREAM] Failed to open stream")
 
         if not valid:
-            return jsonify({'success': False, 'error': 'Invalid username or password for RTSP stream'}), 401
+            return jsonify({'success': False, 'error': error_msg or 'Invalid RTSP stream'}), 400
 
         # Use provided camera ID or generate one
         stream_id = data.get('id') or f"cam{len(config.get('streams', [])) + 1}"
@@ -426,7 +440,7 @@ def api_add_stream():
         stream = {
             'id': stream_id,
             'name': data.get('name', f'Camera {stream_id}'),
-            'rtsp_url': test_url,
+            'rtsp_url': rtsp_url,
             'enabled': True,
             'streaming_enabled': data.get('streaming_enabled', True),
             'chunking_enabled': data.get('chunking_enabled', False),
@@ -442,6 +456,8 @@ def api_add_stream():
 
         # Start stream
         start_stream(stream)
+        
+        print(f"[ADD_STREAM] Successfully added stream: {stream_id}")
 
         return jsonify({
             'success': True,
@@ -706,26 +722,48 @@ def api_onvif_rtsp_uri():
         port = int(data.get('port', 80))
         username = data.get('username', '')
         password = data.get('password', '')
+        
         if not ip or not username or not password:
-            print(f"[ONVIF] Missing required fields: ip={ip}, username={username}, password={'***' if password else ''}")
-            return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+            print(f"[ONVIF] Missing required fields: ip={ip}, username={'set' if username else 'missing'}, password={'set' if password else 'missing'}")
+            return jsonify({'success': False, 'error': 'Missing required fields (IP, username, or password)'}), 400
+        
         print(f"[ONVIF] Attempting RTSP URI retrieval for {ip}:{port} with user '{username}'")
         info = discovery.get_camera_info(ip, port, username, password)
-        if info and 'error' not in info:
-            print(f"[ONVIF] Camera info: {info}")
-        if info and 'error' not in info and info.get('stream_uris'):
-            print(f"[ONVIF] RTSP URIs found: {info['stream_uris']}")
-            # Return the first RTSP URI found
-            return jsonify({'success': True, 'rtsp_url': info['stream_uris'][0]})
-        elif info and 'error' in info:
-            print(f"[ONVIF] Error: {info['error']} - {info['message']}")
-            return jsonify({'success': False, 'error': info['message'], 'details': info.get('details', '')}), 401 if info['error'] == 'auth' else 500
+        
+        # Check for errors
+        if info and 'error' in info:
+            error_type = info['error']
+            message = info['message']
+            print(f"[ONVIF] Error: {error_type} - {message}")
+            
+            # Return appropriate HTTP status code
+            if error_type == 'auth':
+                return jsonify({'success': False, 'error': 'Authentication failed. Check username and password.'}), 401
+            else:
+                return jsonify({'success': False, 'error': message}), 500
+        
+        # Check for stream URIs
+        if info and info.get('stream_uris') and len(info['stream_uris']) > 0:
+            rtsp_url = info['stream_uris'][0]
+            print(f"[ONVIF] RTSP URI found: {rtsp_url[:50]}...")
+            return jsonify({
+                'success': True, 
+                'rtsp_url': rtsp_url,
+                'manufacturer': info.get('manufacturer', 'Unknown'),
+                'model': info.get('model', 'Unknown')
+            })
         else:
-            print(f"[ONVIF] Could not retrieve RTSP URI for {ip}:{port}")
-            return jsonify({'success': False, 'error': 'Could not retrieve RTSP URI', 'details': info}), 200
+            print(f"[ONVIF] No RTSP URIs found for {ip}:{port}")
+            return jsonify({
+                'success': False, 
+                'error': 'Could not retrieve RTSP URI from camera. Camera may not support ONVIF properly.'
+            }), 500
+            
     except Exception as e:
+        import traceback
         print(f"[ONVIF] Exception: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'Error connecting to camera: {str(e)}'}), 500
 
 # ==================== Main ====================
 
