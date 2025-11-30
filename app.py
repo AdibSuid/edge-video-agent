@@ -217,11 +217,6 @@ def discover_page():
     """ONVIF discovery page"""
     return render_template('discover.html')
 
-@app.route('/add_manual')
-def add_manual_page():
-    """Manual camera add page"""
-    return render_template('add_manual.html')
-
 @app.route('/motion')
 def motion_page():
     """Motion settings page"""
@@ -260,18 +255,6 @@ def motion_log_page():
     all_logs.sort(key=lambda x: x['line'], reverse=True)
     
     return render_template('motion_log.html', logs=all_logs)
-
-@app.route('/view_stream')
-def view_stream_page():
-    """Camera stream viewer page"""
-    camera_ip = request.args.get('ip', '')
-    camera_port = request.args.get('port', '80')
-    camera_name = request.args.get('name', 'Camera')
-    
-    return render_template('view_stream.html',
-                         camera_ip=camera_ip,
-                         camera_port=camera_port,
-                         camera_name=camera_name)
 
 # ==================== API Routes ====================
 
@@ -320,22 +303,6 @@ def api_scan_network():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/test_rtsp', methods=['POST'])
-def api_test_rtsp():
-    """Test RTSP URL"""
-    try:
-        data = request.json
-        rtsp_url = data.get('rtsp_url')
-        
-        is_valid = discovery.test_rtsp_url(rtsp_url)
-        
-        return jsonify({
-            'success': True,
-            'valid': is_valid
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
 @app.route('/api/test_stream', methods=['POST'])
 def api_test_stream():
     """Test camera stream with credentials"""
@@ -343,23 +310,44 @@ def api_test_stream():
         data = request.json
         rtsp_url = data.get('rtsp_url')
         
+        if not rtsp_url:
+            return jsonify({'success': False, 'error': 'No RTSP URL provided'}), 400
+        
         import cv2
         
-        # Test RTSP connection
+        # Test RTSP connection with more lenient settings
         cap = cv2.VideoCapture(rtsp_url)
-        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 5000)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 10000)  # 10 second timeout
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         
         is_valid = False
+        error_msg = None
+        
         if cap.isOpened():
+            # Try to read a frame but don't fail if first frame is problematic
             ret, frame = cap.read()
-            is_valid = ret and frame is not None
+            if ret and frame is not None:
+                is_valid = True
+            else:
+                # Give it another chance
+                time.sleep(0.5)
+                ret, frame = cap.read()
+                is_valid = ret and frame is not None
+                if not is_valid:
+                    error_msg = 'Could not read frame from camera'
             cap.release()
+        else:
+            error_msg = 'Could not open RTSP stream'
+        
+        print(f"[TEST_STREAM] {rtsp_url} - Valid: {is_valid}, Error: {error_msg}")
         
         return jsonify({
             'success': True,
-            'valid': is_valid
+            'valid': is_valid,
+            'error': error_msg
         })
     except Exception as e:
+        print(f"[TEST_STREAM] Exception: {str(e)}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/stream_proxy')
@@ -373,8 +361,14 @@ def api_stream_proxy():
     import cv2
     
     def generate():
+        print(f"[STREAM_PROXY] Starting stream for: {rtsp_url}")
         cap = cv2.VideoCapture(rtsp_url)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 15000)  # 15 second timeout
+        
+        if not cap.isOpened():
+            print(f"[STREAM_PROXY] Failed to open stream: {rtsp_url}")
+            return
         
         try:
             while True:
@@ -654,31 +648,6 @@ def api_chunk_events():
             events[stream_id].append(chunk_file.name)
     return jsonify(events)
 
-# ==================== Main ====================
-
-if __name__ == '__main__':
-    print("=" * 60)
-    print("Edge Agent - Motion-Triggered Video Streaming")
-    print("=" * 60)
-    
-    # Load config
-    load_config()
-    print(f"Configuration loaded from {config_file}")
-    
-    # Initialize services
-    init_services()
-    print("Services initialized")
-    
-    # Get web server settings
-    host = config.get('web_host', '0.0.0.0')
-    port = config.get('web_port', 5000)
-    
-    print(f"\nWeb UI available at: http://localhost:{port}")
-    print("=" * 60)
-    
-    # Run Flask app
-    app.run(host=host, port=port, debug=False, threaded=True)
-
 @app.route('/api/change_camera_id', methods=['POST'])
 def api_change_camera_id():
     """Change camera ID for a stream"""
@@ -710,6 +679,24 @@ def api_change_camera_id():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/get_local_subnet', methods=['GET'])
+def api_get_local_subnet():
+    """Get the local subnet prefix for auto-populating discovery"""
+    try:
+        import socket
+        # Create a socket to determine local IP
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+        
+        # Extract subnet (first 3 octets)
+        subnet = '.'.join(local_ip.split('.')[:3])
+        return jsonify({'success': True, 'subnet': subnet, 'local_ip': local_ip})
+    except Exception as e:
+        print(f"[Subnet] Error detecting local subnet: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/onvif_rtsp_uri', methods=['POST'])
 def api_onvif_rtsp_uri():
     """Get RTSP URI from ONVIF using credentials"""
@@ -736,3 +723,28 @@ def api_onvif_rtsp_uri():
     except Exception as e:
         print(f"[ONVIF] Exception: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ==================== Main ====================
+
+if __name__ == '__main__':
+    print("=" * 60)
+    print("Edge Agent - Motion-Triggered Video Streaming")
+    print("=" * 60)
+    
+    # Load config
+    load_config()
+    print(f"Configuration loaded from {config_file}")
+    
+    # Initialize services
+    init_services()
+    print("Services initialized")
+    
+    # Get web server settings
+    host = config.get('web_host', '0.0.0.0')
+    port = config.get('web_port', 5000)
+    
+    print(f"\nWeb UI available at: http://localhost:{port}")
+    print("=" * 60)
+    
+    # Run Flask app
+    app.run(host=host, port=port, debug=False, threaded=True)

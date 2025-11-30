@@ -11,7 +11,7 @@ streams:
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: cam1
+  id: Porch
   name: Camera 192.168.1.103
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
   streaming_enabled: true
@@ -19,7 +19,7 @@ streams:
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: cam2
+  id: Backyard
   name: Camera 192.168.1.102
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
   streaming_enabled: true
