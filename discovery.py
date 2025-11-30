@@ -248,7 +248,7 @@ class ONVIFDiscovery:
             password: Password
             
         Returns:
-            dict: Camera information or None on failure
+            dict: Camera information or error dict on failure
         """
         try:
             # Try to find WSDL files
@@ -326,9 +326,32 @@ class ONVIFDiscovery:
                 'profiles': profile_details
             }
             
+        except Fault as fault:
+            # Handle ONVIF SOAP faults
+            fault_code = getattr(fault, 'code', '')
+            fault_string = getattr(fault, 'message', str(fault))
+            print(f"[ONVIF Fault] {fault_code}: {fault_string}")
+            
+            # Check for authentication errors
+            if 'NotAuthorized' in fault_code or 'NotAuthorized' in fault_string or 'Sender' in fault_code:
+                return {
+                    'error': 'auth',
+                    'message': 'Authentication failed. Please check username and password.',
+                    'details': f"{fault_code}: {fault_string}"
+                }
+            else:
+                return {
+                    'error': 'onvif_fault',
+                    'message': f'ONVIF error: {fault_string}',
+                    'details': f"{fault_code}: {fault_string}"
+                }
         except Exception as e:
             print(f"Failed to get camera info for {ip}: {e}")
-            return None
+            return {
+                'error': 'connection',
+                'message': f'Connection failed: {str(e)}',
+                'details': str(e)
+            }
     
     def _get_wsdl_dir(self):
         """Get the correct WSDL directory path for onvif-zeep"""

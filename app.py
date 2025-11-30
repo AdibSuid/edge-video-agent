@@ -711,12 +711,15 @@ def api_onvif_rtsp_uri():
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
         print(f"[ONVIF] Attempting RTSP URI retrieval for {ip}:{port} with user '{username}'")
         info = discovery.get_camera_info(ip, port, username, password)
-        if info:
+        if info and 'error' not in info:
             print(f"[ONVIF] Camera info: {info}")
-        if info and info.get('stream_uris'):
+        if info and 'error' not in info and info.get('stream_uris'):
             print(f"[ONVIF] RTSP URIs found: {info['stream_uris']}")
             # Return the first RTSP URI found
             return jsonify({'success': True, 'rtsp_url': info['stream_uris'][0]})
+        elif info and 'error' in info:
+            print(f"[ONVIF] Error: {info['error']} - {info['message']}")
+            return jsonify({'success': False, 'error': info['message'], 'details': info.get('details', '')}), 401 if info['error'] == 'auth' else 500
         else:
             print(f"[ONVIF] Could not retrieve RTSP URI for {ip}:{port}")
             return jsonify({'success': False, 'error': 'Could not retrieve RTSP URI', 'details': info}), 200
