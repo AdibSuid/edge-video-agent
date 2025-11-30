@@ -356,20 +356,22 @@ class ONVIFDiscovery:
     def _get_wsdl_dir(self):
         """Get the correct WSDL directory path for onvif-zeep"""
         import os
+        import site
         
-        # Try to find WSDL files in common locations
-        possible_paths = [
-            '/home/raspberry/Documents/edge-video-agent/venv/lib/python3.4/site-packages/wsdl',
-            '/home/raspberry/Documents/edge-video-agent/venv/lib/python3.11/site-packages/wsdl',
-            '/usr/local/lib/python3.11/site-packages/wsdl',
-            '/usr/lib/python3/dist-packages/wsdl',
-        ]
+        # Get all site-packages directories
+        site_packages = site.getsitepackages()
         
-        for path in possible_paths:
-            if os.path.exists(os.path.join(path, 'devicemgmt.wsdl')):
-                return path
+        # Also check user site-packages
+        if site.ENABLE_USER_SITE:
+            site_packages.append(site.getusersitepackages())
         
-        # If not found, return None to use default
+        # Check for WSDL in each site-packages
+        for sp in site_packages:
+            wsdl_path = os.path.join(sp, 'wsdl')
+            if os.path.exists(os.path.join(wsdl_path, 'devicemgmt.wsdl')):
+                return wsdl_path
+        
+        # If not found, return None to use default (remote WSDL)
         return None
     
     def _extract_rtsp_suffix(self, rtsp_url):
