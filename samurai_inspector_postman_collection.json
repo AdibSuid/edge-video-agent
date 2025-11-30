@@ -1,0 +1,58 @@
+{
+  "info": {
+    "name": "Samurai Inspector API Test",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Authenticate",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/x-www-form-urlencoded" },
+          { "key": "accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "urlencoded",
+          "urlencoded": [
+            { "key": "username", "value": "tapway", "type": "text" },
+            { "key": "password", "value": "tapwaysuperadmin", "type": "text" }
+          ]
+        },
+        "url": {
+          "raw": "http://101.47.153.138:8081/auth/login",
+          "protocol": "http",
+          "host": ["101.47.153.138"],
+          "port": "8081",
+          "path": ["auth", "login"]
+        }
+      }
+    },
+    {
+      "name": "Upload Chunk",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Authorization", "value": "Bearer <access_token>" },
+          { "key": "accept", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            { "key": "stream_id", "value": "cam1", "type": "text" },
+            { "key": "ts_start", "value": "1700000000", "type": "text" },
+            { "key": "ts_end", "value": "1700000005", "type": "text" },
+            { "key": "file", "type": "file", "src": "test_chunk.mp4" }
+          ]
+        },
+        "url": {
+          "raw": "http://101.47.153.138:8081/streams/upload-chunk",
+          "protocol": "http",
+          "host": ["101.47.153.138"],
+          "port": "8081",
+          "path": ["streams", "upload-chunk"]
+        }
+      }
+    }
+  ]
+}
