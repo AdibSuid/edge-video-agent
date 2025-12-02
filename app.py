@@ -51,6 +51,7 @@ def load_config():
     if config_file.exists():
         with open(config_file, 'r') as f:
             config = yaml.safe_load(f) or {}
+        print(f"Loaded config: motion_sensitivity={config.get('motion_sensitivity', 25)}, min_area={config.get('motion_min_area', 500)}")
     else:
         # Create default config
         config = {

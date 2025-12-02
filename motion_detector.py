@@ -72,14 +72,18 @@ class MotionDetector:
             
             # Check if any contour is large enough
             motion = any(cv2.contourArea(c) > self.min_area for c in contours)
-
+            
             if motion:
+                print(f"[MOTION] Detected motion with {len(contours)} contours, areas: {[cv2.contourArea(c) for c in contours]}")
                 self.last_motion = time.time()
 
             self.prev_frame = gray
             
             # Return True if motion detected or still in cooldown
-            return motion or (time.time() - self.last_motion < self.cooldown)
+            in_cooldown = (time.time() - self.last_motion < self.cooldown)
+            if in_cooldown:
+                print(f"[MOTION] In cooldown, last motion {time.time() - self.last_motion:.1f}s ago")
+            return motion or in_cooldown
 
     def update_settings(self, sensitivity=None, min_area=None, zones=None, cooldown=None):
         """Update detector settings on the fly"""
