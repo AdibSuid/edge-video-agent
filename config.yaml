@@ -15,11 +15,3 @@ streams:
   name: Camera 192.168.0.130
   rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
   streaming_enabled: true
-- chunk_duration: 5
-  chunk_fps: 2
-  chunking_enabled: false
-  enabled: true
-  id: OfficeEntrance
-  name: Camera 192.168.0.198
-  rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
-  streaming_enabled: true
