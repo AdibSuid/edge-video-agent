@@ -46,6 +46,9 @@ class Streamer:
             min_area=config.get('motion_min_area', 500),
             zones=config.get('motion_zones', []),
             cooldown=config.get('motion_cooldown', 10),
+            detection_scale=config.get('motion_detection_scale', 0.25),
+            blur_kernel=config.get('motion_blur_kernel', 5),
+            frame_skip=config.get('motion_frame_skip', 2),
         )
 
         self.default_bitrate = int(config.get('default_bitrate', 2000000))
@@ -387,24 +390,39 @@ class Streamer:
         if not cap.isOpened():
             self.logger.error(f"Failed to open RTSP stream: {self.rtsp_url}")
             return
+
+        # Configure capture buffer to reduce latency
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
         self.logger.info("RTSP stream opened successfully")
         frame_count = 0
+        last_frame_time = time.time()
+        target_interval = 0.1  # 10 FPS
+
         while self.running:
             ret, frame = cap.read()
             if not ret:
                 self.logger.warning("Failed to read frame, retrying...")
                 time.sleep(0.5)
                 continue
+
             frame_count += 1
             if frame_count % 100 == 0:  # Log every 100 frames
                 self.logger.info(f"Captured {frame_count} frames")
+
             try:
                 if not self.frame_queue.full():
                     self.frame_queue.put(frame, block=False)
             except Exception:
                 pass
-            # Limit to ~10 FPS for motion detection (reduces CPU usage)
-            time.sleep(0.1)
+
+            # Dynamic sleep to maintain target FPS without wasting CPU
+            elapsed = time.time() - last_frame_time
+            sleep_time = max(0, target_interval - elapsed)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            last_frame_time = time.time()
+
         cap.release()
         self.logger.info("Capture loop ended")
 

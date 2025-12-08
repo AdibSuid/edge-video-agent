@@ -2,10 +2,17 @@ cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
+
+# Motion detection settings
 motion_cooldown: 3
 motion_min_area: 5000
 motion_sensitivity: 50
 motion_zones: []
+
+# Performance optimization settings (NEW)
+motion_detection_scale: 0.25  # Scale factor for downsampling (0.25 = 4x smaller, faster processing)
+motion_blur_kernel: 5         # Gaussian blur kernel size (smaller = faster, 5 recommended, must be odd)
+motion_frame_skip: 2          # Process every Nth frame (2 = process every other frame)
 streams:
 - chunk_duration: 5
   chunk_fps: 1
