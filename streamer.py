@@ -93,29 +93,100 @@ class Streamer:
                 while time.time() - start_time < chunk_duration and self.motion_active and self.running:
                     try:
                         frame = self.frame_queue.get(timeout=1)
-                        frames.append(frame)
+                        # Create a copy to avoid holding references to large frame buffers
+                        frames.append(frame.copy())
                     except queue.Empty:
                         pass
                     time.sleep(1.0 / max(1, chunk_fps))
                 if frames:
-                    # Save chunk to file
+                    # Save chunk to file using hardware encoding if available
                     chunk_id = str(uuid.uuid4())[:8]
                     ts_start = int(start_time)
                     ts_end = int(time.time())
                     out_dir = Path('tmp/chunks')
                     out_dir.mkdir(parents=True, exist_ok=True)
                     out_path = out_dir / f"{self.stream_id}_{chunk_id}.mp4"
-                    h, w = frames[0].shape[:2]
-                    writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*'mp4v'), chunk_fps, (w, h))
-                    for f in frames:
-                        writer.write(f)
-                    writer.release()
-                    self.logger.info(f"Chunk saved: {out_path}")
-                    # Upload to cloud
-                    self._upload_chunk_to_cloud(out_path, chunk_id, ts_start, ts_end)
+
+                    # Try hardware encoding first, fallback to software
+                    success = self._encode_chunk_hardware(frames, out_path, chunk_fps)
+                    if not success:
+                        self.logger.warning("Hardware encoding failed, falling back to software encoding")
+                        success = self._encode_chunk_software(frames, out_path, chunk_fps)
+
+                    if success:
+                        self.logger.info(f"Chunk saved: {out_path}")
+                        # Upload to cloud
+                        self._upload_chunk_to_cloud(out_path, chunk_id, ts_start, ts_end)
+                    else:
+                        self.logger.error(f"Failed to encode chunk {chunk_id}")
             except Exception as e:
                 self.logger.error(f"Chunking error: {e}")
             time.sleep(0.5)
+
+    def _encode_chunk_hardware(self, frames, out_path, fps):
+        """Encode video chunk using hardware encoder (h264_v4l2m2m)."""
+        try:
+            import cv2
+            if not frames:
+                return False
+
+            h, w = frames[0].shape[:2]
+
+            # FFmpeg command with hardware encoding
+            cmd = [
+                'ffmpeg',
+                '-y',  # Overwrite output
+                '-f', 'rawvideo',
+                '-vcodec', 'rawvideo',
+                '-pix_fmt', 'bgr24',
+                '-s', f'{w}x{h}',
+                '-r', str(fps),
+                '-i', '-',  # Read from stdin
+                '-c:v', 'h264_v4l2m2m',  # Hardware encoder
+                '-num_output_buffers', '32',
+                '-num_capture_buffers', '16',
+                '-b:v', '1M',  # 1 Mbps bitrate for chunks
+                '-pix_fmt', 'yuv420p',
+                str(out_path)
+            ]
+
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            # Write frames to ffmpeg stdin
+            for frame in frames:
+                try:
+                    proc.stdin.write(frame.tobytes())
+                except BrokenPipeError:
+                    break
+
+            proc.stdin.close()
+            proc.wait(timeout=10)
+
+            return proc.returncode == 0 and out_path.exists()
+
+        except Exception as e:
+            self.logger.error(f"Hardware encoding error: {e}")
+            return False
+
+    def _encode_chunk_software(self, frames, out_path, fps):
+        """Fallback software encoding using cv2.VideoWriter."""
+        try:
+            import cv2
+            if not frames:
+                return False
+
+            h, w = frames[0].shape[:2]
+            writer = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+
+            for frame in frames:
+                writer.write(frame)
+
+            writer.release()
+            return out_path.exists()
+
+        except Exception as e:
+            self.logger.error(f"Software encoding error: {e}")
+            return False
 
     def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
         """Upload chunk to cloud server with authentication."""
@@ -332,7 +403,8 @@ class Streamer:
                     self.frame_queue.put(frame, block=False)
             except Exception:
                 pass
-            time.sleep(0.01)
+            # Limit to ~10 FPS for motion detection (reduces CPU usage)
+            time.sleep(0.1)
         cap.release()
         self.logger.info("Capture loop ended")
 

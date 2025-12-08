@@ -28,14 +28,17 @@ class MotionDetector:
     def detect(self, frame_bgr):
         """
         Detect motion in frame
-        
+
         Args:
             frame_bgr: OpenCV BGR format frame
-            
+
         Returns:
             bool: True if motion detected or still in cooldown period
         """
         with self.lock:
+            # Downsample to 640x360 for faster processing (4x fewer pixels)
+            frame_bgr = cv2.resize(frame_bgr, (640, 360), interpolation=cv2.INTER_AREA)
+
             # Convert to grayscale and blur to reduce noise
             gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
