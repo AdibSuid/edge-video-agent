@@ -2,13 +2,13 @@ cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
-motion_cooldown: 10
-motion_min_area: 2000
+motion_cooldown: 3
+motion_min_area: 5000
 motion_sensitivity: 50
 motion_zones: []
 streams:
 - chunk_duration: 5
-  chunk_fps: 2
+  chunk_fps: 1
   chunking_enabled: true
   enabled: true
   id: cam1
