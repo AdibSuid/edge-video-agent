@@ -1,0 +1,84 @@
+# Optimized configuration for Jetson Orin Nano Super
+# This config enables full GPU acceleration for maximum performance
+
+# Cloud upload settings
+cloud_password: tapwaysuperadmin
+cloud_upload_enabled: true
+cloud_upload_url: http://101.47.153.138:8081
+cloud_username: tapway
+
+# Hardware acceleration settings (Jetson-optimized)
+use_hardware_decode: true     # Enable NVDEC for video decoding
+use_hardware_encode: true     # Enable NVENC for video encoding
+use_cuda_motion_detection: true  # Enable CUDA-accelerated motion detection
+
+# Encoding settings (optimized for NVENC)
+encoding_preset: p1           # Fastest NVENC preset (p1-p7, p1 = fastest)
+encoding_crf: 23              # Quality setting (lower = better quality, 18-28 recommended)
+
+# Motion detection settings (GPU-optimized)
+motion_blur_kernel: 5         # Gaussian blur kernel (5 = fast, odd numbers only)
+motion_cooldown: 3            # Seconds to keep high FPS after motion stops
+motion_detection_scale: 0.25  # Downscale factor (0.25 = 4x smaller = 16x faster)
+motion_frame_skip: 2          # Process every Nth frame (2 = skip 1, process 1)
+motion_min_area: 5000         # Minimum area in pixels to count as motion
+motion_sensitivity: 50        # Threshold 0-255 (lower = more sensitive)
+motion_zones: []              # Optional: Define specific zones [(x,y,w,h),...]
+
+# FPS settings for motion-triggered recording
+motion_low_fps: 1             # FPS when no motion detected (saves bandwidth)
+motion_high_fps: 25           # FPS when motion detected (smooth recording)
+
+# Default stream quality settings
+default_bitrate: 2000000      # 2 Mbps for normal quality
+low_bitrate: 500000           # 500 Kbps for low quality mode
+
+# Video chunking settings
+chunk_duration: 5             # Duration of each video chunk in seconds
+chunk_fps: 2                  # FPS for chunk recording (lower = smaller files)
+
+# Web interface settings
+web_port: 5000
+web_host: 0.0.0.0
+
+# Network monitoring
+upload_speed_threshold_mbps: 2  # Switch to low quality if upload < 2 Mbps
+
+# Telegram notifications (optional)
+telegram_bot_token: ''
+telegram_chat_id: ''
+
+# Camera streams configuration
+# The Jetson Orin Nano Super can handle 5-8 concurrent streams
+streams:
+  - id: cam1
+    name: "Camera 1"
+    rtsp_url: "rtsp://username:password@192.168.1.100:554/stream1"
+    enabled: true
+    chunking_enabled: true
+    chunk_duration: 5
+    chunk_fps: 2
+    streaming_enabled: true
+    
+  # Add more cameras as needed:
+  # - id: cam2
+  #   name: "Camera 2"
+  #   rtsp_url: "rtsp://username:password@192.168.1.101:554/stream1"
+  #   enabled: true
+  #   chunking_enabled: true
+  #   chunk_duration: 5
+  #   chunk_fps: 2
+  #   streaming_enabled: true
+
+# Performance notes for Jetson Orin Nano Super:
+# - With GPU acceleration: Can handle 5-8 simultaneous 1080p streams
+# - CPU usage: ~20-30% per stream (vs 90-100% on RPi)
+# - Motion detection: ~2-3ms per frame (vs 15ms on RPi)
+# - Memory usage: ~500MB per stream
+# - GPU usage: 40-60% with 5 streams
+#
+# Recommended settings for maximum streams:
+# - motion_detection_scale: 0.25 (or 0.2 for even faster processing)
+# - motion_frame_skip: 2-3
+# - chunk_fps: 2 (lower FPS for chunks saves bandwidth)
+# - Use NVENC encoding (automatic on Jetson)

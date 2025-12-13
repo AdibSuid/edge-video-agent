@@ -2,28 +2,42 @@ cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
-
-# Motion detection settings
+encoding_crf: 23
+encoding_preset: p1
+motion_blur_kernel: 5
 motion_cooldown: 3
+motion_detection_scale: 0.25
+motion_frame_skip: 2
+motion_high_fps: 25
+motion_low_fps: 1
 motion_min_area: 5000
 motion_sensitivity: 50
 motion_zones: []
-
-# Performance optimization settings
-motion_detection_scale: 0.25  # Scale factor for downsampling (0.25 = 4x smaller, faster processing)
-motion_blur_kernel: 5         # Gaussian blur kernel size (smaller = faster, 5 recommended, must be odd)
-motion_frame_skip: 2          # Process every Nth frame (2 = process every other frame)
-
-# Video encoding/decoding settings
-use_hardware_decode: true     # Use ffmpeg hardware decoding for RTSP (Pi 5: may help, try both)
-encoding_preset: ultrafast    # libx264 preset: ultrafast|superfast|veryfast|faster|fast|medium
-encoding_crf: 28              # Quality: 18-28 (lower=better quality, higher=smaller file)
 streams:
 - chunk_duration: 5
-  chunk_fps: 1
+  chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: cam1
-  name: Camera 192.168.0.130
-  rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0&unicast=true&proto=Onvif
+  id: Test1
+  name: Camera 192.168.1.103
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
   streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
+  id: Test2
+  name: Camera 192.168.1.102
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
+  id: Test3
+  name: Camera 192.168.1.133
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  streaming_enabled: true
+use_cuda_motion_detection: true
+use_hardware_decode: true
+use_hardware_encode: true

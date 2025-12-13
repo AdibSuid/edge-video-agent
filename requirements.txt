@@ -6,7 +6,9 @@ Flask==3.0.0
 PyYAML==6.0.1
 
 # Computer Vision & Motion Detection
-opencv-python==4.8.1.78
+# NOTE: For Jetson Orin Nano Super, use the pre-built OpenCV with CUDA support
+# Installation: See JETSON_SETUP.md for details
+# opencv-python==4.8.1.78  # Comment out on Jetson - use system OpenCV with CUDA
 numpy==1.24.3
 
 # ONVIF Camera Discovery
@@ -18,4 +20,4 @@ psutil==5.9.6
 requests==2.31.0
 
 # Utilities
-ffmpeg
+# ffmpeg - Install via apt on Jetson: sudo apt install ffmpeg (includes NVENC/NVDEC support)

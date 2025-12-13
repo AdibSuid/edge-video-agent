@@ -1,0 +1,27 @@
+cloud_password: tapwaysuperadmin
+cloud_upload_enabled: true
+cloud_upload_url: http://101.47.153.138:8081
+cloud_username: tapway
+encoding_crf: 23
+encoding_preset: p1
+motion_blur_kernel: 5
+motion_cooldown: 3
+motion_detection_scale: 0.25
+motion_frame_skip: 2
+motion_high_fps: 25
+motion_low_fps: 1
+motion_min_area: 5000
+motion_sensitivity: 50
+motion_zones: []
+streams:
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
+  id: Test123
+  name: Camera 192.168.1.133
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  streaming_enabled: true
+use_cuda_motion_detection: false
+use_hardware_decode: true
+use_hardware_encode: true

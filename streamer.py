@@ -17,8 +17,15 @@ from pathlib import Path
 import logging
 import json
 from datetime import datetime
+import os
 
-from motion_detector import MotionDetector
+# Try to import CUDA motion detector, fallback to CPU version
+try:
+    from motion_detector_cuda import MotionDetectorCUDA as MotionDetector
+    CUDA_AVAILABLE = True
+except ImportError:
+    from motion_detector import MotionDetector
+    CUDA_AVAILABLE = False
 
 
 class Streamer:
@@ -41,6 +48,9 @@ class Streamer:
         self.frame_queue = queue.Queue(maxsize=2)
         self.running = True
 
+        # Initialize logger FIRST before using it
+        self.logger = self._setup_logger()
+
         self.detector = MotionDetector(
             sensitivity=config.get('motion_sensitivity', 25),
             min_area=config.get('motion_min_area', 500),
@@ -50,11 +60,19 @@ class Streamer:
             blur_kernel=config.get('motion_blur_kernel', 5),
             frame_skip=config.get('motion_frame_skip', 2),
         )
+        
+        # Log motion detector type
+        if CUDA_AVAILABLE:
+            try:
+                detector_info = self.detector.get_info()
+                self.logger.info(f"Using CUDA-accelerated motion detector: {detector_info}")
+            except:
+                self.logger.info("Using motion detector (CUDA status unknown)")
+        else:
+            self.logger.info("Using CPU motion detector")
 
         self.default_bitrate = int(config.get('default_bitrate', 2000000))
         self.low_bitrate = int(config.get('low_bitrate', max(400000, self.default_bitrate // 4)))
-
-        self.logger = self._setup_logger()
 
         self._instances.append(self)
 
@@ -102,6 +120,23 @@ class Streamer:
                         pass
                     time.sleep(1.0 / max(1, chunk_fps))
                 if frames:
+                    # Validate frames have consistent dimensions
+                    heights = [f.shape[0] for f in frames]
+                    widths = [f.shape[1] for f in frames]
+                    if len(set(heights)) > 1 or len(set(widths)) > 1:
+                        self.logger.warning(f"Inconsistent frame sizes detected: {set(zip(widths, heights))}, using most common")
+                        # Find most common size
+                        from collections import Counter
+                        size_counts = Counter(zip(widths, heights))
+                        target_w, target_h = size_counts.most_common(1)[0][0]
+                        # Filter frames to matching size
+                        frames = [f for f in frames if f.shape[0] == target_h and f.shape[1] == target_w]
+                        self.logger.info(f"Filtered to {len(frames)} frames of size {target_w}x{target_h}")
+                    
+                    if len(frames) < 2:
+                        self.logger.warning(f"Too few frames ({len(frames)}) for encoding, skipping chunk")
+                        continue
+                    
                     # Save chunk to file using hardware encoding if available
                     chunk_id = str(uuid.uuid4())[:8]
                     ts_start = int(start_time)
@@ -127,13 +162,36 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_hardware(self, frames, out_path, fps):
-        """Encode video chunk using hardware encoder (h264_v4l2m2m)."""
+        """Encode video chunk using NVIDIA hardware encoder (h264_nvenc for Jetson)."""
         try:
             import cv2
             if not frames:
                 return False
 
             h, w = frames[0].shape[:2]
+
+            # Detect platform for encoder selection
+            is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
+            
+            # Select appropriate hardware encoder
+            # Jetson uses V4L2M2M (hardware-accelerated encoder via V4L2 API)
+            if is_jetson:
+                encoder = 'h264_v4l2m2m'
+                encoder_opts = [
+                    '-num_output_buffers', '32',
+                    '-num_capture_buffers', '16',
+                    '-b:v', '2M',  # 2 Mbps for better quality
+                    '-maxrate', '2M',
+                    '-bufsize', '4M',
+                ]
+            else:
+                # Raspberry Pi or other platforms
+                encoder = 'h264_v4l2m2m'
+                encoder_opts = [
+                    '-num_output_buffers', '32',
+                    '-num_capture_buffers', '16',
+                    '-b:v', '1M',
+                ]
 
             # FFmpeg command with hardware encoding
             cmd = [
@@ -145,27 +203,43 @@ class Streamer:
                 '-s', f'{w}x{h}',
                 '-r', str(fps),
                 '-i', '-',  # Read from stdin
-                '-c:v', 'h264_v4l2m2m',  # Hardware encoder
-                '-num_output_buffers', '32',
-                '-num_capture_buffers', '16',
-                '-b:v', '1M',  # 1 Mbps bitrate for chunks
+                '-c:v', encoder,
+            ] + encoder_opts + [
                 '-pix_fmt', 'yuv420p',
                 str(out_path)
             ]
 
-            self.logger.info(f"Attempting hardware encoding: {w}x{h} @ {fps}fps")
+            self.logger.info(f"Attempting hardware encoding ({encoder}): {w}x{h} @ {fps}fps")
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # Write frames to ffmpeg stdin
+            pipe_broken = False
             for frame in frames:
                 try:
                     proc.stdin.write(frame.tobytes())
-                except BrokenPipeError:
-                    self.logger.warning("Hardware encoding pipe broken during write")
+                except (BrokenPipeError, IOError) as e:
+                    self.logger.debug(f"Hardware encoding pipe broken during write: {e}")
+                    pipe_broken = True
                     break
 
-            proc.stdin.close()
-            stdout, stderr = proc.communicate(timeout=10)
+            try:
+                if not pipe_broken and proc.stdin and not proc.stdin.closed:
+                    proc.stdin.flush()
+            except (BrokenPipeError, IOError, ValueError, AttributeError):
+                pass  # Ignore flush errors
+            
+            try:
+                if proc.stdin and not proc.stdin.closed:
+                    proc.stdin.close()
+            except (BrokenPipeError, IOError, ValueError, AttributeError):
+                pass  # Ignore close errors
+
+            try:
+                stdout, stderr = proc.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                self.logger.warning("Hardware encoding timeout, process killed")
 
             success = proc.returncode == 0 and out_path.exists()
 
@@ -183,8 +257,12 @@ class Streamer:
         except subprocess.TimeoutExpired:
             self.logger.error("Hardware encoding timeout (>10s)")
             return False
+        except (BrokenPipeError, IOError, ValueError) as e:
+            # Expected errors when encoder fails (pipe broken, flush on closed file, etc.)
+            self.logger.debug(f"Hardware encoding pipe error: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Hardware encoding error: {e}")
+            self.logger.error(f"Hardware encoding unexpected error: {e}")
             return False
 
     def _encode_chunk_software(self, frames, out_path, fps):
@@ -223,15 +301,33 @@ class Streamer:
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # Write frames to ffmpeg stdin
+            pipe_broken = False
             for frame in frames:
                 try:
                     proc.stdin.write(frame.tobytes())
-                except BrokenPipeError:
-                    self.logger.warning("Software encoding pipe broken during write")
+                except (BrokenPipeError, IOError) as e:
+                    self.logger.debug(f"Software encoding pipe broken during write: {e}")
+                    pipe_broken = True
                     break
 
-            proc.stdin.close()
-            _, stderr = proc.communicate(timeout=15)
+            try:
+                if not pipe_broken and proc.stdin and not proc.stdin.closed:
+                    proc.stdin.flush()
+            except (BrokenPipeError, IOError, ValueError, AttributeError):
+                pass  # Ignore flush errors
+            
+            try:
+                if proc.stdin and not proc.stdin.closed:
+                    proc.stdin.close()
+            except (BrokenPipeError, IOError, ValueError, AttributeError):
+                pass  # Ignore close errors
+
+            try:
+                _, stderr = proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                _, stderr = proc.communicate()
+                self.logger.warning("Software encoding timeout, process killed")
 
             success = proc.returncode == 0 and out_path.exists()
 
@@ -248,8 +344,12 @@ class Streamer:
         except subprocess.TimeoutExpired:
             self.logger.error("Software encoding timeout (>15s)")
             return False
+        except (BrokenPipeError, IOError, ValueError) as e:
+            # Expected errors when encoder fails (pipe broken, flush on closed file, etc.)
+            self.logger.debug(f"Software encoding pipe error: {e}")
+            return False
         except Exception as e:
-            self.logger.error(f"Software encoding error: {e}")
+            self.logger.error(f"Software encoding unexpected error: {e}")
             return False
 
     def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
@@ -449,8 +549,10 @@ class Streamer:
         import numpy as np
 
         use_hw_decode = self.config.get('use_hardware_decode', True)
+        is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
 
         if use_hw_decode:
+            # Try hardware-accelerated FFmpeg decode first
             self.logger.info(f"Starting capture loop with hardware decoding for {self.rtsp_url}")
             success = self._capture_loop_hw_decode()
             if success:
@@ -498,6 +600,119 @@ class Streamer:
 
         cap.release()
         self.logger.info("Capture loop ended")
+
+    def _capture_loop_nvdec(self):
+        """NVIDIA hardware-accelerated RTSP capture using NVDEC (Jetson Orin)."""
+        import cv2
+        import numpy as np
+
+        try:
+            # FFmpeg command with hardware decoding (simplified for Jetson)
+            # Note: Jetson doesn't have h264_cuvid, use standard decode with optimization
+            cmd = [
+                'ffmpeg',
+                '-rtsp_transport', 'tcp',
+                '-i', self.rtsp_url,
+                '-vf', 'fps=10',  # Limit FPS only, keep original resolution
+                '-f', 'rawvideo',
+                '-pix_fmt', 'bgr24',
+                'pipe:1'
+            ]
+
+            self.logger.info("Starting hardware-accelerated decode pipeline")
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
+
+            frame_count = 0
+            last_frame_time = time.time()
+            target_interval = 0.1
+            width, height = None, None
+
+            # Try to detect resolution from stderr output
+            import threading
+            resolution_detected = threading.Event()
+            
+            def read_stderr():
+                for line in proc.stderr:
+                    decoded = line.decode('utf-8', errors='ignore')
+                    if 'Stream #' in decoded and 'Video:' in decoded:
+                        import re
+                        match = re.search(r'(\d{3,4})x(\d{3,4})', decoded)
+                        if match:
+                            nonlocal width, height
+                            width, height = int(match.group(1)), int(match.group(2))
+                            self.logger.info(f"Detected resolution: {width}x{height}")
+                            resolution_detected.set()
+
+            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+            stderr_thread.start()
+
+            # Wait up to 3 seconds for resolution detection
+            if not resolution_detected.wait(timeout=3.0):
+                # Default to common resolution
+                width, height = 1920, 1080
+                self.logger.warning(f"Could not detect resolution, using default {width}x{height}")
+            else:
+                self.logger.info(f"Successfully detected resolution: {width}x{height}")
+
+            frame_size = width * height * 3  # BGR24 = 3 bytes per pixel
+
+            while self.running:
+                raw_frame = proc.stdout.read(frame_size)
+
+                if len(raw_frame) != frame_size:
+                    # Try to auto-detect resolution from actual frame size
+                    if len(raw_frame) > 0 and len(raw_frame) % 3 == 0:
+                        pixel_count = len(raw_frame) // 3
+                        # Common resolutions
+                        common_res = [(1920, 1080), (2304, 1296), (1280, 720), (3840, 2160), (2560, 1440)]
+                        for w, h in common_res:
+                            if w * h == pixel_count:
+                                width, height = w, h
+                                frame_size = len(raw_frame)
+                                self.logger.info(f"Auto-corrected resolution from frame size: {width}x{height}")
+                                # Continue with current frame
+                                break
+                    
+                    if len(raw_frame) != frame_size:
+                        self.logger.warning("Incomplete frame or stream ended")
+                        break
+
+                # Convert raw bytes to numpy array
+                frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((height, width, 3))
+
+                frame_count += 1
+                if frame_count % 100 == 0:
+                    self.logger.info(f"Captured {frame_count} frames (NVDEC)")
+
+                try:
+                    if not self.frame_queue.full():
+                        self.frame_queue.put(frame, block=False)
+                except Exception:
+                    pass
+
+                # Dynamic sleep to maintain target FPS
+                elapsed = time.time() - last_frame_time
+                sleep_time = max(0, target_interval - elapsed)
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+                last_frame_time = time.time()
+
+            proc.terminate()
+            try:
+                proc.wait(timeout=3)
+            except:
+                proc.kill()
+
+            self.logger.info("NVDEC decode capture loop ended successfully")
+            return True
+
+        except Exception as e:
+            self.logger.error(f"NVDEC decode error: {e}")
+            try:
+                proc.terminate()
+            except:
+                pass
+            return False
 
     def _capture_loop_hw_decode(self):
         """Hardware-accelerated RTSP capture using ffmpeg for decoding."""

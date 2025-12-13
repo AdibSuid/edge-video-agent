@@ -1,0 +1,37 @@
+{
+  "platform": {
+    "platform": "jetson",
+    "model": "Jetson (Unknown)",
+    "cuda_available": false,
+    "cuda_devices": 0,
+    "opencv_version": null,
+    "opencv_cuda": false,
+    "ffmpeg_nvenc": false,
+    "ffmpeg_cuvid": false,
+    "recommended_streams": 4,
+    "optimizations": []
+  },
+  "opencv": {
+    "installed": true,
+    "version": "4.10.0",
+    "cuda_available": true,
+    "cuda_devices": 1
+  },
+  "ffmpeg": {
+    "installed": true,
+    "version": "ffmpeg version 4.4.2-1ubuntu0.1 Copyright (c) 2000-2021 the FFmpeg developers",
+    "nvenc": false,
+    "cuvid": false,
+    "v4l2m2m": true
+  },
+  "recommendations": [
+    "\u2713 CUDA-accelerated motion detection available",
+    "\u26a0 NVENC/NVDEC not available - install proper FFmpeg",
+    "\u2713 Can handle up to 4 concurrent streams"
+  ],
+  "config_updates": {
+    "use_cuda_motion_detection": true,
+    "motion_detection_scale": 0.25,
+    "motion_frame_skip": 2
+  }
+}
