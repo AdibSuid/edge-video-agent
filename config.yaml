@@ -41,7 +41,7 @@ streams:
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
-  enabled: false
+  enabled: true
   id: Test4
   name: Camera 192.168.1.103 (Clone 1)
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
@@ -49,7 +49,7 @@ streams:
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
-  enabled: false
+  enabled: true
   id: Test5
   name: Camera 192.168.1.102 (Clone 1)
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
@@ -85,6 +85,14 @@ streams:
   id: Test9
   name: Camera 192.168.1.133 (Clone 2)
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test10
+  name: Camera 192.168.1.103 (Clone 3)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
   streaming_enabled: true
 use_cuda_motion_detection: true
 use_hardware_decode: true
