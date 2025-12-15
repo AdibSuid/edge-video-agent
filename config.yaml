@@ -3,7 +3,7 @@ cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
 encoding_crf: 23
-encoding_preset: p1
+encoding_preset: ultrafast
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 0.25
@@ -14,7 +14,7 @@ motion_min_area: 5000
 motion_sensitivity: 50
 motion_zones: []
 streams:
-- chunk_duration: 5
+- chunk_duration: 1
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
@@ -38,6 +38,54 @@ streams:
   name: Camera 192.168.1.133
   rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
   streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test4
+  name: Camera 192.168.1.103 (Clone 1)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test5
+  name: Camera 192.168.1.102 (Clone 1)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: true
+  id: Test6
+  name: Camera 192.168.1.133 (Clone 1)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test7
+  name: Camera 192.168.1.103 (Clone 2)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test8
+  name: Camera 192.168.1.102 (Clone 2)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
+  streaming_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: true
+  enabled: false
+  id: Test9
+  name: Camera 192.168.1.133 (Clone 2)
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  streaming_enabled: true
 use_cuda_motion_detection: true
 use_hardware_decode: true
-use_hardware_encode: true
+use_hardware_encode: false

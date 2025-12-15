@@ -13,7 +13,7 @@ from datetime import datetime
 import threading
 import time
 
-from streamer import Streamer
+from gstreamer_streamer import GStreamerStreamer as Streamer
 from discovery import ONVIFDiscovery, scan_network_ports
 from monitor import NetworkMonitor, TelegramNotifier
 import cloud_uploader as cloud_uploader_module

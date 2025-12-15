@@ -29,20 +29,40 @@ def detect_platform():
     # Check for Jetson
     if os.path.exists('/etc/nv_tegra_release'):
         platform_info['platform'] = 'jetson'
-        try:
-            with open('/etc/nv_tegra_release', 'r') as f:
-                content = f.read()
-                if 'Orin' in content:
-                    if 'Nano' in content:
+        
+        # First check device tree for more accurate model detection
+        if os.path.exists('/proc/device-tree/model'):
+            try:
+                with open('/proc/device-tree/model', 'r') as f:
+                    dt_model = f.read().strip('\x00')
+                    if 'Orin Nano' in dt_model:
                         platform_info['model'] = 'Jetson Orin Nano'
-                    else:
+                        platform_info['recommended_streams'] = 8
+                    elif 'Orin' in dt_model:
                         platform_info['model'] = 'Jetson Orin'
-                    platform_info['recommended_streams'] = 8
-                else:
-                    platform_info['model'] = 'Jetson (Unknown)'
-                    platform_info['recommended_streams'] = 4
-        except:
-            platform_info['model'] = 'Jetson (Unknown)'
+                        platform_info['recommended_streams'] = 8
+                    else:
+                        platform_info['model'] = f'Jetson ({dt_model})'
+                        platform_info['recommended_streams'] = 4
+            except:
+                pass
+        
+        # Fallback to nv_tegra_release if device tree didn't work
+        if platform_info['model'] == 'unknown':
+            try:
+                with open('/etc/nv_tegra_release', 'r') as f:
+                    content = f.read()
+                    if 'Orin' in content:
+                        if 'Nano' in content:
+                            platform_info['model'] = 'Jetson Orin Nano'
+                        else:
+                            platform_info['model'] = 'Jetson Orin'
+                        platform_info['recommended_streams'] = 8
+                    else:
+                        platform_info['model'] = 'Jetson (Unknown)'
+                        platform_info['recommended_streams'] = 4
+            except:
+                platform_info['model'] = 'Jetson (Unknown)'
             
     # Check for Raspberry Pi
     elif os.path.exists('/proc/device-tree/model'):
@@ -150,12 +170,25 @@ def get_recommendations(platform_info, opencv_info, ffmpeg_info):
             recommendations.append("⚠ OpenCV CUDA support not detected - rebuild OpenCV with CUDA")
             config_updates['use_cuda_motion_detection'] = False
         
-        if ffmpeg_info['nvenc'] and ffmpeg_info['cuvid']:
-            recommendations.append("✓ NVENC/NVDEC hardware encoding available")
+        # Check if this is Jetson Orin Nano (which lacks NVENC hardware)
+        is_orin_nano = platform_info.get('model') == 'Jetson Orin Nano'
+        
+        if ffmpeg_info['cuvid']:
+            recommendations.append("✓ NVDEC hardware decoding available")
             config_updates['use_hardware_decode'] = True
-            config_updates['use_hardware_encode'] = True
         else:
-            recommendations.append("⚠ NVENC/NVDEC not available - install proper FFmpeg")
+            recommendations.append("⚠ NVDEC not available - install proper FFmpeg")
+            config_updates['use_hardware_decode'] = False
+            
+        if ffmpeg_info['nvenc'] and not is_orin_nano:
+            recommendations.append("✓ NVENC hardware encoding available")
+            config_updates['use_hardware_encode'] = True
+        elif is_orin_nano:
+            recommendations.append("✓ Optimized software encoding recommended (NVENC/V4L2M2M not available on Orin Nano)")
+            config_updates['use_hardware_encode'] = False  # Use software encoding
+        else:
+            recommendations.append("⚠ Hardware encoding not available - using optimized software encoding")
+            config_updates['use_hardware_encode'] = False
             
         recommendations.append(f"✓ Can handle up to {platform_info['recommended_streams']} concurrent streams")
         config_updates['motion_detection_scale'] = 0.25

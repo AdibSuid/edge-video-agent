@@ -137,6 +137,9 @@ class Streamer:
                         self.logger.warning(f"Too few frames ({len(frames)}) for encoding, skipping chunk")
                         continue
                     
+                    # Log frame info
+                    self.logger.info(f"Encoding chunk with {len(frames)} frames of shape {frames[0].shape}")
+
                     # Save chunk to file using hardware encoding if available
                     chunk_id = str(uuid.uuid4())[:8]
                     ts_start = int(start_time)
@@ -145,10 +148,15 @@ class Streamer:
                     out_dir.mkdir(parents=True, exist_ok=True)
                     out_path = out_dir / f"{self.stream_id}_{chunk_id}.mp4"
 
-                    # Try hardware encoding first, fallback to software
-                    success = self._encode_chunk_hardware(frames, out_path, chunk_fps)
-                    if not success:
-                        self.logger.warning("Hardware encoding failed, falling back to software encoding")
+                    # Try hardware encoding first if enabled, fallback to software
+                    use_hw_encode = self.config.get('use_hardware_encode', True)
+                    if use_hw_encode:
+                        success = self._encode_chunk_hardware(frames, out_path, chunk_fps)
+                        if not success:
+                            self.logger.warning("Hardware encoding failed, falling back to software encoding")
+                            success = self._encode_chunk_software(frames, out_path, chunk_fps)
+                    else:
+                        # Skip hardware encoding for platforms that don't support it
                         success = self._encode_chunk_software(frames, out_path, chunk_fps)
 
                     if success:
@@ -162,7 +170,7 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_hardware(self, frames, out_path, fps):
-        """Encode video chunk using NVIDIA hardware encoder (h264_nvenc for Jetson)."""
+        """Encode video chunk using hardware acceleration or optimized software encoding for Jetson Orin Nano."""
         try:
             import cv2
             if not frames:
@@ -173,24 +181,58 @@ class Streamer:
             # Detect platform for encoder selection
             is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
             
+            # Check if this is Jetson Orin Nano (which lacks NVENC hardware)
+            is_orin_nano = False
+            if is_jetson and os.path.exists('/etc/nv_tegra_release'):
+                try:
+                    with open('/etc/nv_tegra_release', 'r') as f:
+                        content = f.read()
+                        is_orin_nano = 'Orin' in content and 'Nano' in content
+                except:
+                    pass
+            
+            # Check for NVENC availability (skip for Orin Nano)
+            has_nvenc = False
+            if not is_orin_nano:
+                try:
+                    import subprocess
+                    result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5)
+                    has_nvenc = 'h264_nvenc' in result.stdout
+                except:
+                    has_nvenc = False
+            
             # Select appropriate hardware encoder
-            # Jetson uses V4L2M2M (hardware-accelerated encoder via V4L2 API)
-            if is_jetson:
+            if has_nvenc:
+                # Use NVIDIA NVENC (best performance for non-Orin Nano Jetson)
+                encoder = 'h264_nvenc'
+                encoder_opts = [
+                    '-preset', 'p1',  # Fast preset for low latency
+                    '-b:v', '2M',     # 2 Mbps bitrate
+                    '-maxrate', '2M',
+                    '-bufsize', '4M',
+                ]
+            elif is_jetson and not is_orin_nano:
+                # Use V4L2M2M for other Jetson models (not Orin Nano)
                 encoder = 'h264_v4l2m2m'
                 encoder_opts = [
                     '-num_output_buffers', '32',
                     '-num_capture_buffers', '16',
-                    '-b:v', '2M',  # 2 Mbps for better quality
+                    '-b:v', '2M',
                     '-maxrate', '2M',
                     '-bufsize', '4M',
                 ]
             else:
-                # Raspberry Pi or other platforms
-                encoder = 'h264_v4l2m2m'
+                # Optimized software encoding for Orin Nano and other platforms
+                # Use libx264 with GPU-accelerated processing where possible
+                encoder = 'libx264'
                 encoder_opts = [
-                    '-num_output_buffers', '32',
-                    '-num_capture_buffers', '16',
-                    '-b:v', '1M',
+                    '-preset', 'ultrafast',  # Fastest preset for low latency
+                    '-tune', 'zerolatency',  # Optimize for low latency
+                    '-crf', '23',            # Quality setting (lower = better quality)
+                    '-maxrate', '2M',        # Max bitrate
+                    '-bufsize', '4M',        # Buffer size
+                    '-threads', '0',         # Auto-detect threads
+                    '-g', '30',              # GOP size (keyframe interval)
                 ]
 
             # FFmpeg command with hardware encoding
@@ -209,7 +251,8 @@ class Streamer:
                 str(out_path)
             ]
 
-            self.logger.info(f"Attempting hardware encoding ({encoder}): {w}x{h} @ {fps}fps")
+            encoding_type = "hardware" if encoder in ['h264_nvenc', 'h264_v4l2m2m'] else "optimized software"
+            self.logger.info(f"Attempting {encoding_type} encoding ({encoder}): {w}x{h} @ {fps}fps")
             proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             # Write frames to ffmpeg stdin
@@ -250,7 +293,7 @@ class Streamer:
                 if stderr:
                     # Log first 500 chars of error for debugging
                     error_msg = stderr.decode('utf-8', errors='ignore')[:500]
-                    self.logger.debug(f"FFmpeg stderr: {error_msg}")
+                    self.logger.info(f"FFmpeg stderr: {error_msg}")
 
             return success
 
@@ -266,7 +309,7 @@ class Streamer:
             return False
 
     def _encode_chunk_software(self, frames, out_path, fps):
-        """Optimized software encoding using ffmpeg libx264."""
+        """Software encoding using OpenCV VideoWriter."""
         try:
             import cv2
             if not frames:
@@ -274,82 +317,24 @@ class Streamer:
 
             h, w = frames[0].shape[:2]
 
-            # Get encoding preset from config (default: ultrafast for low CPU)
-            preset = self.config.get('encoding_preset', 'ultrafast')
-            crf = self.config.get('encoding_crf', 28)  # Quality: 18-28 (higher=smaller file, lower quality)
+            # Use OpenCV VideoWriter with MP4V codec (works on most systems)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
 
-            # Use ffmpeg with optimized libx264 settings
-            cmd = [
-                'ffmpeg',
-                '-y',
-                '-f', 'rawvideo',
-                '-vcodec', 'rawvideo',
-                '-pix_fmt', 'bgr24',
-                '-s', f'{w}x{h}',
-                '-r', str(fps),
-                '-i', '-',
-                '-c:v', 'libx264',
-                '-preset', preset,  # ultrafast = lowest CPU, fast encode
-                '-tune', 'zerolatency',  # Optimize for real-time encoding
-                '-crf', str(crf),  # Constant quality mode
-                '-pix_fmt', 'yuv420p',
-                '-movflags', '+faststart',  # Enable streaming playback
-                str(out_path)
-            ]
+            if not out.isOpened():
+                self.logger.error("Failed to open VideoWriter")
+                return False
 
-            self.logger.info(f"Software encoding (libx264): {w}x{h} @ {fps}fps, preset={preset}, crf={crf}")
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-            # Write frames to ffmpeg stdin
-            pipe_broken = False
             for frame in frames:
-                try:
-                    proc.stdin.write(frame.tobytes())
-                except (BrokenPipeError, IOError) as e:
-                    self.logger.debug(f"Software encoding pipe broken during write: {e}")
-                    pipe_broken = True
-                    break
+                out.write(frame)
 
-            try:
-                if not pipe_broken and proc.stdin and not proc.stdin.closed:
-                    proc.stdin.flush()
-            except (BrokenPipeError, IOError, ValueError, AttributeError):
-                pass  # Ignore flush errors
-            
-            try:
-                if proc.stdin and not proc.stdin.closed:
-                    proc.stdin.close()
-            except (BrokenPipeError, IOError, ValueError, AttributeError):
-                pass  # Ignore close errors
-
-            try:
-                _, stderr = proc.communicate(timeout=15)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                _, stderr = proc.communicate()
-                self.logger.warning("Software encoding timeout, process killed")
-
-            success = proc.returncode == 0 and out_path.exists()
-
-            if success:
-                self.logger.info(f"✓ Software encoding succeeded: {out_path.name}")
-            else:
-                self.logger.warning(f"✗ Software encoding failed (returncode={proc.returncode})")
-                if stderr:
-                    error_msg = stderr.decode('utf-8', errors='ignore')[:500]
-                    self.logger.debug(f"FFmpeg stderr: {error_msg}")
-
+            out.release()
+            success = out_path.exists() and out_path.stat().st_size > 0
+            self.logger.info(f"✓ OpenCV encoding succeeded: {out_path.name}, size: {out_path.stat().st_size}")
             return success
 
-        except subprocess.TimeoutExpired:
-            self.logger.error("Software encoding timeout (>15s)")
-            return False
-        except (BrokenPipeError, IOError, ValueError) as e:
-            # Expected errors when encoder fails (pipe broken, flush on closed file, etc.)
-            self.logger.debug(f"Software encoding pipe error: {e}")
-            return False
         except Exception as e:
-            self.logger.error(f"Software encoding unexpected error: {e}")
+            self.logger.error(f"OpenCV encoding error: {e}")
             return False
 
     def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
@@ -606,12 +591,19 @@ class Streamer:
         import cv2
         import numpy as np
 
+    def _capture_loop_nvdec(self):
+        """NVIDIA hardware-accelerated RTSP capture using NVDEC (Jetson Orin)."""
+        import cv2
+        import numpy as np
+
         try:
-            # FFmpeg command with hardware decoding (simplified for Jetson)
-            # Note: Jetson doesn't have h264_cuvid, use standard decode with optimization
+            # FFmpeg command with NVDEC hardware decoding for Jetson
             cmd = [
                 'ffmpeg',
                 '-rtsp_transport', 'tcp',
+                '-hwaccel', 'cuda',        # Enable CUDA hardware acceleration
+                '-hwaccel_device', '0',    # Use GPU device 0
+                '-c:v', 'h264_cuvid',      # Use NVIDIA CUVID decoder
                 '-i', self.rtsp_url,
                 '-vf', 'fps=10',  # Limit FPS only, keep original resolution
                 '-f', 'rawvideo',
@@ -715,21 +707,39 @@ class Streamer:
             return False
 
     def _capture_loop_hw_decode(self):
-        """Hardware-accelerated RTSP capture using ffmpeg for decoding."""
+        """Hardware-accelerated RTSP capture using ffmpeg with NVDEC/CUVID."""
         import cv2
         import numpy as np
 
         try:
-            # FFmpeg command with hardware decoding
-            cmd = [
-                'ffmpeg',
-                '-rtsp_transport', 'tcp',
-                '-i', self.rtsp_url,
-                '-vf', 'fps=10',  # Limit to 10 FPS
-                '-f', 'rawvideo',
-                '-pix_fmt', 'bgr24',
-                'pipe:1'
-            ]
+            # Check if we're on Jetson and can use hardware decoding
+            is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
+            
+            if is_jetson:
+                # Use NVIDIA CUVID for hardware decoding on Jetson
+                cmd = [
+                    'ffmpeg',
+                    '-rtsp_transport', 'tcp',
+                    '-hwaccel', 'cuda',        # Enable CUDA hardware acceleration
+                    '-hwaccel_device', '0',    # Use GPU device 0
+                    '-c:v', 'h264_cuvid',      # Use NVIDIA CUVID decoder
+                    '-i', self.rtsp_url,
+                    '-vf', 'fps=10',  # Limit to 10 FPS
+                    '-f', 'rawvideo',
+                    '-pix_fmt', 'bgr24',
+                    'pipe:1'
+                ]
+            else:
+                # Fallback for non-Jetson systems
+                cmd = [
+                    'ffmpeg',
+                    '-rtsp_transport', 'tcp',
+                    '-i', self.rtsp_url,
+                    '-vf', 'fps=10',  # Limit to 10 FPS
+                    '-f', 'rawvideo',
+                    '-pix_fmt', 'bgr24',
+                    'pipe:1'
+                ]
 
             self.logger.info("Starting hardware-accelerated decode pipeline")
             proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8)
@@ -768,11 +778,13 @@ class Streamer:
 
             frame_size = width * height * 3  # BGR24 = 3 bytes per pixel
 
+            success = True
             while self.running:
                 raw_frame = proc.stdout.read(frame_size)
 
                 if len(raw_frame) != frame_size:
                     self.logger.warning("Incomplete frame or stream ended")
+                    success = False
                     break
 
                 # Convert raw bytes to numpy array
@@ -802,7 +814,7 @@ class Streamer:
                 proc.kill()
 
             self.logger.info("Hardware decode capture loop ended")
-            return True
+            return success
 
         except Exception as e:
             self.logger.error(f"Hardware decode error: {e}")
