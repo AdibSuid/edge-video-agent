@@ -37,8 +37,16 @@ class Streamer:
     _instances = []
     _low_quality = False
     _lock = threading.Lock()
+    # Network adaptation hysteresis
+    _network_hysteresis_hold_time = 10.0  # seconds
+    _network_low_threshold = 2000000  # 2 Mbps
+    _network_recovery_threshold = 3000000  # 3 Mbps
+    _network_quality_change_time = None
+    _pending_low_quality = False
     # path to ffmpeg if available on PATH (updated by autodetect)
     _ffmpeg_path = shutil.which('ffmpeg')
+    # Class logger for static methods
+    _logger = logging.getLogger(__name__)
 
     def __init__(self, rtsp_url, config, stream_id):
         self.rtsp_url = rtsp_url
@@ -59,6 +67,8 @@ class Streamer:
             detection_scale=config.get('motion_detection_scale', 0.25),
             blur_kernel=config.get('motion_blur_kernel', 5),
             frame_skip=config.get('motion_frame_skip', 2),
+            hysteresis_active=config.get('motion_hysteresis_active', 2.0),
+            hysteresis_inactive=config.get('motion_hysteresis_inactive', 5.0),
         )
         
         # Log motion detector type
@@ -132,6 +142,13 @@ class Streamer:
                         # Filter frames to matching size
                         frames = [f for f in frames if f.shape[0] == target_h and f.shape[1] == target_w]
                         self.logger.info(f"Filtered to {len(frames)} frames of size {target_w}x{target_h}")
+                    
+                    # Enforce minimum chunk duration (discard micro chunks)
+                    min_chunk_duration = self.config.get('min_chunk_duration', 2.0)
+                    min_frames = int(chunk_fps * min_chunk_duration)
+                    if len(frames) < min_frames:
+                        self.logger.info(f"Chunk too short ({len(frames)} frames < {min_frames} min), discarding")
+                        continue
                     
                     if len(frames) < 2:
                         self.logger.warning(f"Too few frames ({len(frames)}) for encoding, skipping chunk")
@@ -232,7 +249,7 @@ class Streamer:
                     '-maxrate', '2M',        # Max bitrate
                     '-bufsize', '4M',        # Buffer size
                     '-threads', '0',         # Auto-detect threads
-                    '-g', '30',              # GOP size (keyframe interval)
+                    '-g', str(int(fps * 2)),  # GOP size ≈ 2 × fps for event clips
                 ]
 
             # FFmpeg command with hardware encoding
@@ -317,8 +334,8 @@ class Streamer:
 
             h, w = frames[0].shape[:2]
 
-            # Use OpenCV VideoWriter with MP4V codec (works on most systems)
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            # Use H.264 codec for better compatibility with short clips
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264 codec
             out = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
 
             if not out.isOpened():
@@ -404,14 +421,12 @@ class Streamer:
         return self.default_bitrate
 
     def _get_target_fps(self):
-        """Return target FPS based on motion state and config.
+        """Return target FPS based on motion state.
 
-        Uses `motion_high_fps` and `motion_low_fps` values from config with
-        sensible defaults (25/1).
+        Now returns fixed high FPS to avoid pipeline restarts.
+        Motion inactivity is handled by frame dropping at capture level.
         """
-        if self.motion_active:
-            return int(self.config.get('motion_high_fps', 25))
-        return int(self.config.get('motion_low_fps', 1))
+        return int(self.config.get('motion_high_fps', 25))
 
     def _build_ffmpeg_command(self):
         # Build ffmpeg command with dynamic FPS and bitrate
@@ -571,7 +586,9 @@ class Streamer:
                 self.logger.info(f"Captured {frame_count} frames")
 
             try:
-                if not self.frame_queue.full():
+                # Only queue frames when motion is active or during cooldown
+                # This implements frame dropping for motion inactivity instead of FPS changes
+                if self.motion_active and not self.frame_queue.full():
                     self.frame_queue.put(frame, block=False)
             except Exception:
                 pass
@@ -677,7 +694,8 @@ class Streamer:
                     self.logger.info(f"Captured {frame_count} frames (NVDEC)")
 
                 try:
-                    if not self.frame_queue.full():
+                    # Only queue frames when motion is active or during cooldown
+                    if self.motion_active and not self.frame_queue.full():
                         self.frame_queue.put(frame, block=False)
                 except Exception:
                     pass
@@ -759,7 +777,8 @@ class Streamer:
                     self.logger.info(f"Captured {frame_count} frames (HW decode)")
 
                 try:
-                    if not self.frame_queue.full():
+                    # Only queue frames when motion is active or during cooldown
+                    if self.motion_active and not self.frame_queue.full():
                         self.frame_queue.put(frame, block=False)
                 except Exception:
                     pass
@@ -816,22 +835,22 @@ class Streamer:
             if motion != last_motion_state:
                 self.motion_active = motion
                 target_bitrate = self._get_target_bitrate()
-                target_fps = self._get_target_fps()
+                # FPS is now fixed, only restart on bitrate changes
+                fixed_fps = self._get_target_fps()
                 
                 if last_bitrate is None:
                     last_bitrate = target_bitrate
-                    last_fps = target_fps
-                    # Initial state - start pipeline
-                    self.logger.info(f"Initial state: Motion={motion}, FPS {target_fps}, Bitrate {target_bitrate}")
-                    self._log_motion_event("MOTION" if motion else "IDLE", target_fps)
+                    # Initial state - start pipeline at fixed high FPS
+                    self.logger.info(f"Initial state: Motion={motion}, Fixed FPS {fixed_fps}, Bitrate {target_bitrate}")
+                    self._log_motion_event("MOTION" if motion else "IDLE", fixed_fps)
                     self._restart_pipeline()
-                elif target_bitrate != last_bitrate or target_fps != last_fps:
-                    status = "Motion ACTIVE (high FPS)" if motion else "Motion INACTIVE (low FPS)"
-                    self.logger.info(f"{status}: FPS {last_fps}->{target_fps}, Bitrate {last_bitrate}->{target_bitrate}; restarting pipeline")
-                    self._log_motion_event("MOTION" if motion else "IDLE", target_fps)
+                elif target_bitrate != last_bitrate:
+                    # Only restart on bitrate changes (network adaptation), not FPS changes
+                    status = "Motion ACTIVE" if motion else "Motion INACTIVE"
+                    self.logger.info(f"{status}: Bitrate {last_bitrate}->{target_bitrate} (fixed FPS {fixed_fps}); restarting pipeline")
+                    self._log_motion_event("MOTION" if motion else "IDLE", fixed_fps)
                     self._restart_pipeline()
                     last_bitrate = target_bitrate
-                    last_fps = target_fps
                 
                 last_motion_state = motion
             
@@ -840,19 +859,54 @@ class Streamer:
 
     @classmethod
     def set_low_quality(cls, enabled: bool):
-        """Enable/disable low-quality mode for all streamers.
+        """Enable/disable low-quality mode for all streamers with hysteresis.
 
-        This is a classmethod to match calls like `Streamer.set_low_quality(True)`
-        made elsewhere in the codebase.
+        Network adaptation hysteresis prevents immediate quality switching on
+        bandwidth jitter. Requires stable conditions for hold_time before applying changes.
         """
         with cls._lock:
-            cls._low_quality = enabled
-            for inst in list(cls._instances):
-                try:
-                    inst._restart_pipeline()
-                except Exception:
-                    # Individual restart failures should not block others
-                    pass
+            current_time = time.time()
+
+            if enabled and not cls._pending_low_quality:
+                # Requesting low quality - start hysteresis timer
+                cls._pending_low_quality = True
+                cls._network_quality_change_time = current_time
+                cls._logger.info(f"Network quality degradation detected, waiting {cls._network_hysteresis_hold_time}s before switching to low quality")
+                # Start background thread to apply change after hold time
+                threading.Thread(target=cls._apply_pending_quality_change, args=(enabled,), daemon=True).start()
+
+            elif not enabled and cls._pending_low_quality:
+                # Requesting recovery - start hysteresis timer
+                cls._pending_low_quality = False
+                cls._network_quality_change_time = current_time
+                cls._logger.info(f"Network quality recovery detected, waiting {cls._network_hysteresis_hold_time}s before switching to high quality")
+                # Start background thread to apply change after hold time
+                threading.Thread(target=cls._apply_pending_quality_change, args=(enabled,), daemon=True).start()
+
+    @classmethod
+    def _apply_pending_quality_change(cls, enabled: bool):
+        """Apply pending quality change after hysteresis hold time."""
+        hold_time = cls._network_hysteresis_hold_time
+
+        # Wait for hold time
+        time.sleep(hold_time)
+
+        with cls._lock:
+            # Check if the request is still pending (no conflicting requests during hold time)
+            if (enabled and cls._pending_low_quality) or (not enabled and not cls._pending_low_quality):
+                cls._low_quality = enabled
+                quality = "LOW" if enabled else "HIGH"
+                cls._logger.info(f"Network adaptation hysteresis complete: switching to {quality} quality")
+
+                # Restart pipelines for all instances
+                for inst in list(cls._instances):
+                    try:
+                        inst._restart_pipeline()
+                    except Exception:
+                        # Individual restart failures should not block others
+                        pass
+            else:
+                cls._logger.info("Network adaptation hysteresis cancelled: conflicting request received during hold time")
 
     @classmethod
     def restart_all(cls):

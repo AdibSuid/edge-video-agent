@@ -4,11 +4,17 @@ cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
 encoding_crf: 23
 encoding_preset: ultrafast
+min_chunk_duration: 2.0
+network_hysteresis_hold_time: 10.0
+network_low_threshold: 2000000
+network_recovery_threshold: 3000000
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 0.25
 motion_frame_skip: 2
 motion_high_fps: 25
+motion_hysteresis_active: 2.0
+motion_hysteresis_inactive: 5.0
 motion_low_fps: 1
 motion_min_area: 5000
 motion_sensitivity: 50

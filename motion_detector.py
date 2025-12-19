@@ -8,7 +8,8 @@ class MotionDetector:
     """Lightweight CPU-only motion detector using frame differencing"""
 
     def __init__(self, sensitivity=25, min_area=500, zones=None, cooldown=10,
-                 detection_scale=0.25, blur_kernel=5, frame_skip=2):
+                 detection_scale=0.25, blur_kernel=5, frame_skip=2,
+                 hysteresis_active=2.0, hysteresis_inactive=5.0):
         """
         Initialize motion detector
 
@@ -20,6 +21,8 @@ class MotionDetector:
             detection_scale: Scale factor for downsampling (0.25 = 4x smaller, faster)
             blur_kernel: Gaussian blur kernel size (smaller = faster, 5 recommended)
             frame_skip: Process every Nth frame (2 = process every other frame)
+            hysteresis_active: Seconds of continuous motion required to switch to ACTIVE
+            hysteresis_inactive: Seconds of continuous no-motion required to switch to INACTIVE
         """
         self.sensitivity = sensitivity
         self.min_area = min_area
@@ -28,10 +31,14 @@ class MotionDetector:
         self.detection_scale = detection_scale
         self.blur_kernel = blur_kernel if blur_kernel % 2 == 1 else blur_kernel + 1  # Must be odd
         self.frame_skip = max(1, frame_skip)
+        self.hysteresis_active = hysteresis_active
+        self.hysteresis_inactive = hysteresis_inactive
         self.frame_counter = 0
         self.prev_frame = None
         self.last_motion = 0
         self.last_motion_state = False
+        self.motion_start_time = None  # Time when motion was first detected
+        self.no_motion_start_time = None  # Time when no motion was first detected
         self.lock = Lock()
 
     def detect(self, frame_bgr):
@@ -101,19 +108,42 @@ class MotionDetector:
 
             # Check if any contour is large enough (scale min_area accordingly)
             scaled_min_area = self.min_area * (self.detection_scale ** 2)
-            motion = any(cv2.contourArea(c) > scaled_min_area for c in contours)
+            motion_detected = any(cv2.contourArea(c) > scaled_min_area for c in contours)
 
-            if motion:
-                self.last_motion = time.time()
+            current_time = time.time()
+
+            # Update hysteresis timers
+            if motion_detected:
+                if self.no_motion_start_time is not None:
+                    # Motion resumed, reset no-motion timer
+                    self.no_motion_start_time = None
+                if self.motion_start_time is None:
+                    # Start motion timer
+                    self.motion_start_time = current_time
+                elif current_time - self.motion_start_time >= self.hysteresis_active:
+                    # Sustained motion detected, switch to ACTIVE
+                    if not self.last_motion_state:
+                        self.last_motion_state = True
+                        self.last_motion = current_time
+            else:
+                if self.motion_start_time is not None:
+                    # Motion stopped, reset motion timer
+                    self.motion_start_time = None
+                if self.no_motion_start_time is None:
+                    # Start no-motion timer
+                    self.no_motion_start_time = current_time
+                elif current_time - self.no_motion_start_time >= self.hysteresis_inactive:
+                    # Sustained no-motion detected, switch to INACTIVE
+                    self.last_motion_state = False
 
             self.prev_frame = gray
 
-            # Calculate motion state (motion detected or still in cooldown)
-            self.last_motion_state = motion or (time.time() - self.last_motion < self.cooldown)
-            return self.last_motion_state
+            # Return current motion state (includes cooldown for ACTIVE state)
+            return self.last_motion_state or (time.time() - self.last_motion < self.cooldown)
 
     def update_settings(self, sensitivity=None, min_area=None, zones=None, cooldown=None,
-                        detection_scale=None, blur_kernel=None, frame_skip=None):
+                        detection_scale=None, blur_kernel=None, frame_skip=None,
+                        hysteresis_active=None, hysteresis_inactive=None):
         """Update detector settings on the fly"""
         with self.lock:
             if sensitivity is not None:
@@ -130,3 +160,7 @@ class MotionDetector:
                 self.blur_kernel = blur_kernel if blur_kernel % 2 == 1 else blur_kernel + 1
             if frame_skip is not None:
                 self.frame_skip = max(1, frame_skip)
+            if hysteresis_active is not None:
+                self.hysteresis_active = hysteresis_active
+            if hysteresis_inactive is not None:
+                self.hysteresis_inactive = hysteresis_inactive
