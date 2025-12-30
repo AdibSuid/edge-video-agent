@@ -154,6 +154,12 @@ class Streamer:
                         success = self._encode_chunk_hardware(frames, out_path, chunk_fps)
                         if not success:
                             self.logger.warning("Hardware encoding failed, falling back to software encoding")
+                            # Remove any partial file from failed hardware encoding
+                            if out_path.exists():
+                                try:
+                                    out_path.unlink()
+                                except Exception as e:
+                                    self.logger.debug(f"Could not remove partial file: {e}")
                             success = self._encode_chunk_software(frames, out_path, chunk_fps)
                     else:
                         # Skip hardware encoding for platforms that don't support it
@@ -177,6 +183,9 @@ class Streamer:
                 return False
 
             h, w = frames[0].shape[:2]
+
+            # Ensure output directory exists
+            out_path.parent.mkdir(parents=True, exist_ok=True)
 
             # Detect platform for encoder selection
             is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
@@ -257,25 +266,32 @@ class Streamer:
 
             # Write frames to ffmpeg stdin
             pipe_broken = False
+            frames_written = 0
             for frame in frames:
                 try:
-                    proc.stdin.write(frame.tobytes())
+                    if proc.stdin and not proc.stdin.closed:
+                        proc.stdin.write(frame.tobytes())
+                        frames_written += 1
+                    else:
+                        self.logger.debug("Hardware encoding stdin closed prematurely")
+                        pipe_broken = True
+                        break
                 except (BrokenPipeError, IOError) as e:
                     self.logger.debug(f"Hardware encoding pipe broken during write: {e}")
                     pipe_broken = True
                     break
 
-            try:
-                if not pipe_broken and proc.stdin and not proc.stdin.closed:
-                    proc.stdin.flush()
-            except (BrokenPipeError, IOError, ValueError, AttributeError):
-                pass  # Ignore flush errors
-            
+            self.logger.debug(f"Wrote {frames_written} frames to hardware encoder")
+
+            # Properly close stdin to signal end of input
             try:
                 if proc.stdin and not proc.stdin.closed:
-                    proc.stdin.close()
-            except (BrokenPipeError, IOError, ValueError, AttributeError):
-                pass  # Ignore close errors
+                    proc.stdin.flush()  # Flush any remaining data
+                    proc.stdin.close()  # Close stdin to signal EOF
+            except (BrokenPipeError, IOError, ValueError, AttributeError, OSError) as e:
+                # Ignore errors during cleanup - pipe might already be closed
+                self.logger.debug(f"Ignored stdin cleanup error: {e}")
+                pass
 
             try:
                 stdout, stderr = proc.communicate(timeout=10)
@@ -290,6 +306,13 @@ class Streamer:
                 self.logger.info(f"✓ Hardware encoding succeeded: {out_path.name}")
             else:
                 self.logger.warning(f"✗ Hardware encoding failed (returncode={proc.returncode})")
+                # Clean up any partial output file
+                if out_path.exists():
+                    try:
+                        out_path.unlink()
+                        self.logger.debug("Cleaned up partial hardware encoding file")
+                    except Exception as e:
+                        self.logger.debug(f"Could not remove partial file: {e}")
                 if stderr:
                     # Log first 500 chars of error for debugging
                     error_msg = stderr.decode('utf-8', errors='ignore')[:500]
@@ -317,6 +340,9 @@ class Streamer:
 
             h, w = frames[0].shape[:2]
 
+            # Ensure output directory exists
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+
             # Use OpenCV VideoWriter with MP4V codec (works on most systems)
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
@@ -325,16 +351,44 @@ class Streamer:
                 self.logger.error("Failed to open VideoWriter")
                 return False
 
+            frames_written = 0
             for frame in frames:
-                out.write(frame)
+                try:
+                    out.write(frame)
+                    frames_written += 1
+                except Exception as e:
+                    self.logger.error(f"Error writing frame {frames_written}: {e}")
+                    break
 
-            out.release()
+            # Properly release the writer
+            try:
+                out.release()
+            except Exception as e:
+                self.logger.debug(f"Error releasing VideoWriter: {e}")
+
+            # Check if file was created and has content
             success = out_path.exists() and out_path.stat().st_size > 0
-            self.logger.info(f"✓ OpenCV encoding succeeded: {out_path.name}, size: {out_path.stat().st_size}")
+            if success:
+                self.logger.info(f"✓ OpenCV encoding succeeded: {out_path.name}, size: {out_path.stat().st_size}, frames: {frames_written}")
+            else:
+                self.logger.error(f"✗ OpenCV encoding failed: file not created or empty")
+                # Clean up empty file
+                if out_path.exists():
+                    try:
+                        out_path.unlink()
+                    except Exception as e:
+                        self.logger.debug(f"Could not remove empty file: {e}")
+
             return success
 
         except Exception as e:
             self.logger.error(f"OpenCV encoding error: {e}")
+            # Clean up any partial file
+            if out_path.exists():
+                try:
+                    out_path.unlink()
+                except Exception as cleanup_error:
+                    self.logger.debug(f"Could not cleanup partial file: {cleanup_error}")
             return False
 
     def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
