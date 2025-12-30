@@ -176,96 +176,61 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_hardware(self, frames, out_path, fps):
-        """Encode video chunk using hardware acceleration or optimized software encoding for Jetson Orin Nano."""
+        """
+        Encode video chunk using GStreamer with nvv4l2h264enc (community standard).
+
+        This is the NVIDIA-recommended approach for Jetson platforms using GStreamer
+        with V4L2 hardware-accelerated encoding. Supports both JetPack 4.x and 5.x.
+        """
         try:
             import cv2
+            import subprocess
+
             if not frames:
                 return False
 
             h, w = frames[0].shape[:2]
-
-            # Ensure output directory exists
             out_path.parent.mkdir(parents=True, exist_ok=True)
 
-            # Detect platform for encoder selection
+            # Check if we're on Jetson
             is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
-            
-            # Check if this is Jetson Orin Nano (which lacks NVENC hardware)
-            is_orin_nano = False
-            if is_jetson and os.path.exists('/etc/nv_tegra_release'):
-                try:
-                    with open('/etc/nv_tegra_release', 'r') as f:
-                        content = f.read()
-                        is_orin_nano = 'Orin' in content and 'Nano' in content
-                except:
-                    pass
-            
-            # Check for NVENC availability (skip for Orin Nano)
-            has_nvenc = False
-            if not is_orin_nano:
-                try:
-                    import subprocess
-                    result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5)
-                    has_nvenc = 'h264_nvenc' in result.stdout
-                except:
-                    has_nvenc = False
-            
-            # Select appropriate hardware encoder
-            if has_nvenc:
-                # Use NVIDIA NVENC (best performance for non-Orin Nano Jetson)
-                encoder = 'h264_nvenc'
-                encoder_opts = [
-                    '-preset', 'p1',  # Fast preset for low latency
-                    '-b:v', '2M',     # 2 Mbps bitrate
-                    '-maxrate', '2M',
-                    '-bufsize', '4M',
-                ]
-            elif is_jetson and not is_orin_nano:
-                # Use V4L2M2M for other Jetson models (not Orin Nano)
-                encoder = 'h264_v4l2m2m'
-                encoder_opts = [
-                    '-num_output_buffers', '32',
-                    '-num_capture_buffers', '16',
-                    '-b:v', '2M',
-                    '-maxrate', '2M',
-                    '-bufsize', '4M',
-                ]
-            else:
-                # Optimized software encoding for Orin Nano and other platforms
-                # Use libx264 with GPU-accelerated processing where possible
-                encoder = 'libx264'
-                encoder_opts = [
-                    '-preset', 'ultrafast',  # Fastest preset for low latency
-                    '-tune', 'zerolatency',  # Optimize for low latency
-                    '-crf', '23',            # Quality setting (lower = better quality)
-                    '-maxrate', '2M',        # Max bitrate
-                    '-bufsize', '4M',        # Buffer size
-                    '-threads', '0',         # Auto-detect threads
-                    '-g', '30',              # GOP size (keyframe interval)
-                ]
 
-            # FFmpeg command with hardware encoding
-            cmd = [
-                'ffmpeg',
-                '-y',  # Overwrite output
-                '-f', 'rawvideo',
-                '-vcodec', 'rawvideo',
-                '-pix_fmt', 'bgr24',
-                '-s', f'{w}x{h}',
-                '-r', str(fps),
-                '-i', '-',  # Read from stdin
-                '-c:v', encoder,
-            ] + encoder_opts + [
-                '-pix_fmt', 'yuv420p',
-                str(out_path)
+            if not is_jetson:
+                self.logger.warning("Hardware encoding only supported on Jetson, using software fallback")
+                return False
+
+            # Build GStreamer pipeline for hardware encoding (community standard)
+            # Uses nvv4l2h264enc which works on both JetPack 4.x and 5.x
+            gst_cmd = [
+                'gst-launch-1.0',
+                '-e',  # Send EOS on interrupt
+                'fdsrc', '!',
+                f'video/x-raw,format=BGR,width={w},height={h},framerate={fps}/1', '!',
+                'videoconvert', '!',
+                'video/x-raw,format=I420', '!',
+                'nvv4l2h264enc',
+                'maxperf-enable=true',        # Enable maximum performance mode (lowest latency)
+                'bitrate=2000000',             # 2 Mbps target bitrate
+                'preset-level=1',              # 0=Slow, 1=Medium, 2=Fast, 3=UltraFast
+                'insert-sps-pps=true',         # Insert SPS/PPS at every IDR frame
+                'idrinterval=30', '!',         # IDR frame interval (keyframe every 30 frames)
+                'h264parse', '!',
+                'qtmux', '!',
+                f'filesink location={out_path}'
             ]
 
-            encoding_type = "hardware" if encoder in ['h264_nvenc', 'h264_v4l2m2m'] else "optimized software"
-            self.logger.info(f"Attempting {encoding_type} encoding ({encoder}): {w}x{h} @ {fps}fps")
-            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.logger.info(f"Encoding with nvv4l2h264enc (GStreamer): {w}x{h} @ {fps}fps")
 
-            # Write frames to ffmpeg stdin
-            pipe_broken = False
+            # Start GStreamer subprocess
+            proc = subprocess.Popen(
+                gst_cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                bufsize=10**8
+            )
+
+            # Write frames to GStreamer stdin
             frames_written = 0
             for frame in frames:
                 try:
@@ -273,62 +238,56 @@ class Streamer:
                         proc.stdin.write(frame.tobytes())
                         frames_written += 1
                     else:
-                        self.logger.debug("Hardware encoding stdin closed prematurely")
-                        pipe_broken = True
+                        self.logger.debug("GStreamer stdin closed prematurely")
                         break
                 except (BrokenPipeError, IOError) as e:
-                    self.logger.debug(f"Hardware encoding pipe broken during write: {e}")
-                    pipe_broken = True
+                    self.logger.debug(f"GStreamer pipe broken: {e}")
                     break
 
-            self.logger.debug(f"Wrote {frames_written} frames to hardware encoder")
+            self.logger.debug(f"Wrote {frames_written} frames to GStreamer encoder")
 
-            # Properly close stdin to signal end of input
+            # Close stdin and wait for encoding to complete
             try:
                 if proc.stdin and not proc.stdin.closed:
-                    proc.stdin.flush()  # Flush any remaining data
-                    proc.stdin.close()  # Close stdin to signal EOF
-            except (BrokenPipeError, IOError, ValueError, AttributeError, OSError) as e:
-                # Ignore errors during cleanup - pipe might already be closed
-                self.logger.debug(f"Ignored stdin cleanup error: {e}")
+                    proc.stdin.flush()
+                    proc.stdin.close()
+            except Exception as e:
+                self.logger.debug(f"Error closing stdin: {e}")
                 pass
 
+            # Wait for GStreamer to finish encoding
             try:
                 stdout, stderr = proc.communicate(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
                 stdout, stderr = proc.communicate()
-                self.logger.warning("Hardware encoding timeout, process killed")
+                self.logger.warning("GStreamer encoding timeout, process killed")
 
-            success = proc.returncode == 0 and out_path.exists()
+            # Check success
+            success = proc.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
 
             if success:
-                self.logger.info(f"✓ Hardware encoding succeeded: {out_path.name}")
+                file_size = out_path.stat().st_size
+                self.logger.info(f"✓ GStreamer hardware encoding succeeded: {out_path.name} "
+                               f"({file_size} bytes, {frames_written} frames)")
             else:
-                self.logger.warning(f"✗ Hardware encoding failed (returncode={proc.returncode})")
-                # Clean up any partial output file
+                self.logger.warning(f"✗ GStreamer hardware encoding failed (returncode={proc.returncode})")
+                if stderr:
+                    error_msg = stderr.decode('utf-8', errors='ignore')[:500]
+                    self.logger.debug(f"GStreamer stderr: {error_msg}")
+                # Clean up partial file
                 if out_path.exists():
                     try:
                         out_path.unlink()
-                        self.logger.debug("Cleaned up partial hardware encoding file")
-                    except Exception as e:
-                        self.logger.debug(f"Could not remove partial file: {e}")
-                if stderr:
-                    # Log first 500 chars of error for debugging
-                    error_msg = stderr.decode('utf-8', errors='ignore')[:500]
-                    self.logger.info(f"FFmpeg stderr: {error_msg}")
+                    except Exception:
+                        pass
 
             return success
 
-        except subprocess.TimeoutExpired:
-            self.logger.error("Hardware encoding timeout (>10s)")
-            return False
-        except (BrokenPipeError, IOError, ValueError) as e:
-            # Expected errors when encoder fails (pipe broken, flush on closed file, etc.)
-            self.logger.debug(f"Hardware encoding pipe error: {e}")
-            return False
         except Exception as e:
-            self.logger.error(f"Hardware encoding unexpected error: {e}")
+            self.logger.error(f"GStreamer hardware encoding error: {e}")
+            import traceback
+            self.logger.debug(traceback.format_exc())
             return False
 
     def _encode_chunk_software(self, frames, out_path, fps):
