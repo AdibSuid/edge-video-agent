@@ -41,23 +41,34 @@ echo "Step 1: Installing dependencies..."
 echo "-----------------------------------"
 sudo apt-get update
 
-# Install GStreamer
+# CRITICAL: Install pkg-config FIRST (needed to find other packages)
+echo "Installing pkg-config..."
+sudo apt-get install -y pkg-config
+
+# Install GStreamer runtime and plugins
+echo "Installing GStreamer runtime..."
 sudo apt-get install -y \
     gstreamer1.0-tools \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
     gstreamer1.0-plugins-ugly \
-    gstreamer1.0-libav \
-    libgstreamer1.0-dev \
-    libgstreamer-plugins-base1.0-dev
+    gstreamer1.0-libav
 
-# Install build dependencies
+# Install GStreamer development libraries (CRITICAL for OpenCV)
+echo "Installing GStreamer development libraries..."
+sudo apt-get install -y \
+    libgstreamer1.0-0 \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
+    gstreamer1.0-plugins-base-apps
+
+# Install OpenCV build dependencies
+echo "Installing OpenCV build dependencies..."
 sudo apt-get install -y \
     build-essential \
     cmake \
     git \
-    pkg-config \
     libjpeg-dev \
     libpng-dev \
     libtiff-dev \
@@ -75,6 +86,44 @@ sudo apt-get install -y \
     libtbb2 \
     libtbb-dev \
     libdc1394-22-dev
+
+echo ""
+echo "Verifying GStreamer installation..."
+echo "-----------------------------------"
+
+# Verify pkg-config can find GStreamer
+if ! pkg-config --exists gstreamer-1.0; then
+    echo "ERROR: pkg-config cannot find gstreamer-1.0"
+    echo ""
+    echo "Debugging information:"
+    echo "  pkg-config search path:"
+    pkg-config --variable pc_path pkg-config
+    echo ""
+    echo "  Looking for .pc files:"
+    find /usr -name "gstreamer-1.0.pc" 2>/dev/null || echo "  Not found in /usr"
+    echo ""
+    echo "Please run: ./diagnose_gstreamer.sh for detailed diagnostics"
+    exit 1
+fi
+
+echo "✓ pkg-config found gstreamer-1.0 version $(pkg-config --modversion gstreamer-1.0)"
+
+if ! pkg-config --exists gstreamer-base-1.0; then
+    echo "ERROR: pkg-config cannot find gstreamer-base-1.0"
+    echo "Please run: ./diagnose_gstreamer.sh for detailed diagnostics"
+    exit 1
+fi
+
+echo "✓ pkg-config found gstreamer-base-1.0"
+
+if ! pkg-config --exists gstreamer-video-1.0; then
+    echo "ERROR: pkg-config cannot find gstreamer-video-1.0"
+    echo "Please run: ./diagnose_gstreamer.sh for detailed diagnostics"
+    exit 1
+fi
+
+echo "✓ pkg-config found gstreamer-video-1.0"
+echo "✓ All GStreamer dependencies verified"
 
 echo ""
 echo "Step 2: Removing old OpenCV installations..."
@@ -171,13 +220,54 @@ echo "  ✓ Python 3: Correct paths"
 echo ""
 
 # Check if GStreamer was found
+echo ""
+echo "Checking CMake configuration..."
+
+if [ ! -f CMakeCache.txt ]; then
+    echo "ERROR: CMakeCache.txt not found!"
+    echo "CMake configuration may have failed."
+    exit 1
+fi
+
 if grep -q "GStreamer:.*YES" CMakeCache.txt; then
     echo "✓ GStreamer support: ENABLED"
+
+    # Show GStreamer details from CMake
+    echo ""
+    echo "GStreamer configuration details:"
+    grep "GSTREAMER" CMakeCache.txt | grep -v "^//" | head -10 | sed 's/^/  /'
 else
     echo "✗ GStreamer support: DISABLED"
     echo ""
     echo "ERROR: GStreamer was not enabled!"
-    echo "Please check the errors above and fix dependencies."
+    echo ""
+    echo "CMake could not find GStreamer. Debugging information:"
+    echo ""
+
+    # Show what CMake found
+    echo "What CMake searched for:"
+    grep -i "gstreamer" CMakeCache.txt | head -10 | sed 's/^/  /'
+
+    echo ""
+    echo "Checking CMakeOutput.log for GStreamer errors:"
+    if [ -f CMakeFiles/CMakeOutput.log ]; then
+        grep -i "gstreamer" CMakeFiles/CMakeOutput.log | tail -20 | sed 's/^/  /'
+    fi
+
+    echo ""
+    echo "Checking CMakeError.log for GStreamer errors:"
+    if [ -f CMakeFiles/CMakeError.log ]; then
+        grep -i "gstreamer" CMakeFiles/CMakeError.log | tail -20 | sed 's/^/  /'
+    fi
+
+    echo ""
+    echo "Please run: ./diagnose_gstreamer.sh for detailed diagnostics"
+    echo ""
+    echo "Common fixes:"
+    echo "  1. Make sure you're on a Jetson device (not building on PC)"
+    echo "  2. Run: sudo apt-get install libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev"
+    echo "  3. Verify: pkg-config --exists gstreamer-1.0 && echo OK"
+    echo "  4. Clean build: rm -rf ~/opencv_build/opencv-*/build/* and retry"
     exit 1
 fi
 
