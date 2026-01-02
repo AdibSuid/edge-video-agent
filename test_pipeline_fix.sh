@@ -20,9 +20,9 @@ echo ""
 echo "2. Testing hardware decode (5 seconds)..."
 timeout 5 gst-launch-1.0 -v \
   rtspsrc location="$RTSP_URL" latency=200 protocols=tcp ! \
-  queue max-size-buffers=2 leaky=downstream ! \
   rtph264depay ! \
   h264parse ! \
+  queue max-size-buffers=2 leaky=downstream ! \
   nvv4l2decoder enable-max-performance=1 ! \
   fakesink \
   2>&1 | head -30
@@ -35,9 +35,9 @@ mkdir -p tmp/test_chunks
 
 timeout 10 gst-launch-1.0 -e \
   rtspsrc location="$RTSP_URL" latency=200 protocols=tcp retry=3 timeout=10000000 ! \
-  queue max-size-buffers=2 leaky=downstream ! \
   rtph264depay ! \
   h264parse ! \
+  queue max-size-buffers=2 leaky=downstream ! \
   nvv4l2decoder enable-max-performance=1 ! \
   nvvidconv ! \
   "video/x-raw(memory:NVMM),format=I420" ! \

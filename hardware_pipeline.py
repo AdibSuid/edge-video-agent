@@ -55,7 +55,7 @@ class HardwarePipeline:
         chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000
         
         # Pure GStreamer pipeline with error handling
-        # FIXED: Properties must be separate list items, not combined
+        # FIXED: Queue must come AFTER depay to avoid not-linked errors
         pipeline = [
             'gst-launch-1.0', '-e',
             'rtspsrc', 
@@ -64,15 +64,15 @@ class HardwarePipeline:
             'protocols=tcp', 
             'retry=3', 
             'timeout=10000000',
-            '!', 'queue', 
-            'max-size-buffers=2', 
-            'leaky=downstream',
             '!', 'rtph264depay',
             '!', 'h264parse',
+            '!', 'queue',  # Queue AFTER depay/parse, not before
+            'max-size-buffers=2', 
+            'leaky=downstream',
             '!', 'nvv4l2decoder', 
             'enable-max-performance=1',
             '!', 'nvvidconv',
-            '!', 'video/x-raw(memory:NVMM),format=I420',  # Combine caps into single string
+            '!', 'video/x-raw(memory:NVMM),format=I420',
             '!', 'nvv4l2h264enc', 
             f'bitrate={bitrate}', 
             'preset-level=1', 
