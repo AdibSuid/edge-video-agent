@@ -1,6 +1,6 @@
 cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
-cloud_upload_url: http://101.47.153.138:9002
+cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway_minio
 encoding_crf: 28
 encoding_preset: ultrafast
