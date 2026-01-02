@@ -55,34 +55,24 @@ class HardwarePipeline:
         chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000
         
         # Pure GStreamer pipeline with error handling
-        # FIXED: Use select-stream=false to avoid dynamic pad issues
+        # COMMUNITY STANDARD: Use uridecodebin to handle dynamic pads automatically
         pipeline = [
             'gst-launch-1.0', '-e',
-            'rtspsrc', 
-            f'location={self.rtsp_url}', 
-            'latency=200', 
-            'protocols=tcp', 
-            'retry=3', 
-            'timeout=10000000',
-            'drop-on-latency=true',
-            '!', 'application/x-rtp,media=video',  # Filter for video stream only
-            '!', 'rtph264depay',
-            '!', 'h264parse',
+            'uridecodebin',
+            f'uri={self.rtsp_url}',
             '!', 'queue',
-            'max-size-buffers=2', 
+            'max-size-buffers=2',
             'leaky=downstream',
-            '!', 'nvv4l2decoder', 
-            'enable-max-performance=1',
             '!', 'nvvidconv',
             '!', 'video/x-raw(memory:NVMM),format=I420',
-            '!', 'nvv4l2h264enc', 
-            f'bitrate={bitrate}', 
-            'preset-level=1', 
+            '!', 'nvv4l2h264enc',
+            f'bitrate={bitrate}',
+            'preset-level=1',
             'insert-sps-pps=true',
             '!', 'h264parse',
-            '!', 'splitmuxsink', 
-            f'location={output_dir}/{self.stream_id}_%05d.mp4', 
-            f'max-size-time={chunk_duration_ns}', 
+            '!', 'splitmuxsink',
+            f'location={output_dir}/{self.stream_id}_%05d.mp4',
+            f'max-size-time={chunk_duration_ns}',
             'max-files=100'
         ]
         
