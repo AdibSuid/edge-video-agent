@@ -103,6 +103,12 @@ class Streamer:
         
         return logger
 
+    def _get_target_fps(self):
+        """Get target FPS based on motion state (required by API)"""
+        if self.motion_active:
+            return int(self.config.get('motion_high_fps', 25))
+        return int(self.config.get('motion_low_fps', 1))
+
     def _motion_detection_loop(self):
         """Lightweight motion detection using downscaled OpenCV capture"""
         self.logger.info("Starting motion detection loop (lightweight CPU capture)")
@@ -138,7 +144,7 @@ class Streamer:
                 self.motion_active = motion
                 status = "MOTION ACTIVE" if motion else "MOTION INACTIVE"
                 self.logger.info(f"{status}")
-                self._log_motion_event("MOTION" if motion else "IDLE", 25 if motion else 1)
+                self._log_motion_event("MOTION" if motion else "IDLE", self._get_target_fps())
                 last_motion_state = motion
             
             # Log activity
@@ -185,21 +191,29 @@ class Streamer:
                         # Move to output directory for upload
                         dest = output_dir / chunk.name
                         if not dest.exists():
-                            shutil.move(str(chunk), str(dest))
-                            self.logger.info(f"✓ Saved motion chunk: {chunk.name}")
-                            
-                            # Queue for upload
-                            self._queue_chunk_upload(dest)
+                            try:
+                                shutil.move(str(chunk), str(dest))
+                                self.logger.info(f"✓ Saved motion chunk: {chunk.name}")
+                                
+                                # Queue for upload
+                                self._queue_chunk_upload(dest)
+                            except Exception as e:
+                                self.logger.error(f"Failed to move chunk: {e}")
                     else:
                         # Delete old chunks when no motion
                         if chunk_age > 30:  # Keep 30s buffer
-                            chunk.unlink()
-                            self.logger.debug(f"Deleted old chunk: {chunk.name}")
+                            try:
+                                chunk.unlink()
+                                self.logger.debug(f"Deleted old chunk: {chunk.name}")
+                            except Exception as e:
+                                self.logger.error(f"Failed to delete chunk: {e}")
                 
                 time.sleep(2)  # Check every 2 seconds
                 
             except Exception as e:
                 self.logger.error(f"Chunk manager error: {e}")
+                import traceback
+                traceback.print_exc()
                 time.sleep(5)
 
     def _queue_chunk_upload(self, chunk_path):

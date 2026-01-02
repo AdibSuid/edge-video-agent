@@ -47,30 +47,31 @@ class HardwarePipeline:
         self.logger.info("✓ Hardware pipeline started")
     
     def _run_pipeline(self):
-        """Run the GStreamer pipeline process"""
+        """Run the GStreamer pipeline process with auto-reconnect"""
         output_dir = Path('tmp/hw_chunks') / self.stream_id
         output_dir.mkdir(parents=True, exist_ok=True)
         
         bitrate = int(self.config.get('chunk_bitrate', 2000000))
-        chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000  # Convert to nanoseconds
+        chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000
         
-        # Pure GStreamer pipeline - 100% hardware, 0% CPU
+        # Pure GStreamer pipeline with error handling
         pipeline = [
             'gst-launch-1.0', '-e',
-            'rtspsrc', f'location={self.rtsp_url}', 'latency=200', 'protocols=tcp',
+            'rtspsrc', f'location={self.rtsp_url}', 
+            'latency=200', 'protocols=tcp', 'retry=3', 'timeout=10000000',  # Add retry and timeout
             '!', 'queue', 'max-size-buffers=2', 'leaky=downstream',
             '!', 'rtph264depay',
             '!', 'h264parse',
-            '!', 'nvv4l2decoder', 'enable-max-performance=1',  # NVDEC continuously active
+            '!', 'nvv4l2decoder', 'enable-max-performance=1',
             '!', 'nvvidconv',
             '!', 'video/x-raw(memory:NVMM)',
-            '!', 'nvv4l2h264enc', f'bitrate={bitrate}', 'preset-level=1', 'insert-sps-pps=true',  # NVENC continuously active
+            '!', 'nvv4l2h264enc', f'bitrate={bitrate}', 'preset-level=1', 'insert-sps-pps=true',
             '!', 'h264parse',
             '!', 'splitmuxsink', f'location={output_dir}/{self.stream_id}_%05d.mp4', 
-            f'max-size-time={chunk_duration_ns}', 'max-files=100'  # Auto-rotate, keep last 100 chunks
+            f'max-size-time={chunk_duration_ns}', 'max-files=100'
         ]
         
-        self.logger.info(f"Starting pipeline: {' '.join(pipeline[:15])}...")
+        self.logger.info(f"Starting pipeline with auto-reconnect...")
         
         while self.running:
             try:
@@ -78,30 +79,40 @@ class HardwarePipeline:
                     pipeline,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    preexec_fn=os.setsid  # Create new process group for clean termination
+                    preexec_fn=os.setsid
                 )
                 
-                self.logger.info("✓ NVDEC + NVENC pipeline running (continuous hardware acceleration)")
+                self.logger.info("✓ NVDEC + NVENC pipeline active")
                 
-                # Monitor stderr for errors
+                # Monitor stderr
+                error_count = 0
                 for line in self.process.stderr:
                     line_str = line.decode('utf-8', errors='ignore').strip()
-                    if 'ERROR' in line_str or 'WARNING' in line_str:
+                    
+                    if 'ERROR' in line_str:
+                        error_count += 1
+                        self.logger.error(f"GStreamer: {line_str}")
+                        
+                        # Too many errors, restart
+                        if error_count > 5:
+                            self.logger.warning("Too many errors, restarting pipeline...")
+                            break
+                    elif 'WARNING' in line_str:
                         self.logger.warning(f"GStreamer: {line_str}")
                 
                 # Process ended
                 self.process.wait()
                 
                 if self.running:
-                    self.logger.warning("Pipeline died, restarting in 5s...")
-                    time.sleep(5)
+                    self.logger.warning("Pipeline ended, reconnecting in 3s...")
+                    time.sleep(3)
                 else:
                     break
                     
             except Exception as e:
-                self.logger.error(f"Pipeline error: {e}")
+                self.logger.error(f"Pipeline exception: {e}")
                 if self.running:
-                    time.sleep(5)
+                    time.sleep(3)
                 else:
                     break
         
