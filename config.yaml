@@ -40,3 +40,7 @@ streams:
   streaming_enabled: true
 use_hardware_decode: true
 use_hardware_encode: true
+
+# Hardware pipeline settings
+use_hardware_pipeline: true  # Enable pure GStreamer hardware pipeline
+chunk_bitrate: 2000000       # 2 Mbps
