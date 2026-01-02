@@ -1,10 +1,9 @@
 """
 GStreamer-based streamer with NVIDIA hardware acceleration for Jetson.
-Supports hardware decode (NVDEC) and hardware encode (NVENC).
+Uses filesrc method for maximum reliability with NVENC.
 """
 
 import subprocess
-import shlex
 import shutil
 import threading
 import time
@@ -24,7 +23,7 @@ class Streamer:
 
     Features:
     - NVDEC hardware decoding for RTSP streams
-    - NVENC hardware encoding for video chunks
+    - NVENC hardware encoding for video chunks (filesrc method)
     - Motion-triggered adaptive FPS
     - Automatic fallback to software when hardware unavailable
     """
@@ -189,7 +188,7 @@ class Streamer:
         """GStreamer-based capture with NVIDIA hardware decode"""
         try:
             pipeline = self._build_gstreamer_pipeline()
-            self.logger.info(f"GStreamer pipeline: {pipeline}")
+            self.logger.info(f"GStreamer pipeline: {pipeline[:100]}...")
             
             cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
             
@@ -366,82 +365,114 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_gstreamer(self, frames, out_path, fps):
-        """Encode video chunk using GStreamer NVENC"""
+        """Encode video chunk using GStreamer NVENC with filesrc method (most reliable)"""
+        temp_raw = None
         try:
             if not frames:
                 return False
 
             h, w = frames[0].shape[:2]
-            bitrate = int(self.config.get('chunk_bitrate', 1000000))
+            bitrate = int(self.config.get('chunk_bitrate', 2000000))
 
-            # GStreamer pipeline for NVIDIA hardware encoding
+            # Create temporary raw YUV file
+            temp_raw = Path('tmp/chunks') / f"temp_{self.stream_id}_{int(time.time() * 1000)}.yuv"
+            temp_raw.parent.mkdir(parents=True, exist_ok=True)
+
+            self.logger.info(f"NVENC encoding: {w}x{h} @ {fps}fps, bitrate={bitrate}, frames={len(frames)}")
+
+            # Write all frames to temporary YUV file
+            try:
+                with open(temp_raw, 'wb') as f:
+                    for i, frame in enumerate(frames):
+                        try:
+                            # Convert BGR to YUV I420
+                            yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
+                            f.write(yuv.tobytes())
+                        except Exception as e:
+                            self.logger.error(f"Frame conversion error at {i}: {e}")
+                            if temp_raw.exists():
+                                temp_raw.unlink()
+                            return False
+                
+                if not temp_raw.exists() or temp_raw.stat().st_size == 0:
+                    self.logger.error("Failed to write temp YUV file (empty or missing)")
+                    return False
+                    
+            except Exception as e:
+                self.logger.error(f"Failed to write temp YUV file: {e}")
+                if temp_raw and temp_raw.exists():
+                    temp_raw.unlink()
+                return False
+
+            # Encode with GStreamer using filesrc
             pipeline = (
-                f"appsrc ! "
-                f"videoconvert ! "
-                f"video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 ! "
-                f"nvv4l2h264enc bitrate={bitrate} ! "  # NVIDIA hardware encoder
+                f"filesrc location={temp_raw} ! "
+                f"rawvideoparse width={w} height={h} format=i420 framerate={fps}/1 ! "
+                f"nvv4l2h264enc bitrate={bitrate} preset-level=1 insert-sps-pps=true ! "
                 f"h264parse ! "
                 f"qtmux ! "
                 f"filesink location={out_path}"
             )
 
-            self.logger.info(f"NVENC encoding: {w}x{h} @ {fps}fps, bitrate={bitrate}")
+            cmd = ['gst-launch-1.0', '-e'] + pipeline.split()
             
-            proc = subprocess.Popen(
-                ['gst-launch-1.0', '-e'] + pipeline.split(),
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
+            self.logger.info(f"Running GStreamer NVENC...")
+            
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    timeout=30,
+                    check=False
+                )
+                
+                success = result.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
 
-            # Write frames
-            for i, frame in enumerate(frames):
-                try:
-                    # Convert BGR to I420 (YUV420)
-                    yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
-                    proc.stdin.write(yuv.tobytes())
-                except BrokenPipeError:
-                    self.logger.warning(f"Pipe broken at frame {i}/{len(frames)}")
-                    break
-                except Exception as e:
-                    self.logger.error(f"Frame write error: {e}")
-                    break
+                if success:
+                    file_size = out_path.stat().st_size
+                    self.logger.info(f"✓ NVENC succeeded: {out_path.name} ({file_size} bytes, {len(frames)} frames)")
+                else:
+                    stderr_text = result.stderr.decode('utf-8', errors='ignore')[:500]
+                    self.logger.warning(f"✗ NVENC failed (rc={result.returncode}): {stderr_text}")
 
-            proc.stdin.close()
-            stdout, stderr = proc.communicate(timeout=15)
+            except subprocess.TimeoutExpired:
+                self.logger.error("NVENC timeout (>30s)")
+                success = False
 
-            success = proc.returncode == 0 and out_path.exists()
-
-            if success:
-                self.logger.info(f"✓ NVENC succeeded: {out_path.name} ({out_path.stat().st_size} bytes)")
-            else:
-                stderr_text = stderr.decode('utf-8', errors='ignore')[:500]
-                self.logger.warning(f"✗ NVENC failed (rc={proc.returncode}): {stderr_text}")
+            # Cleanup temp file
+            try:
+                if temp_raw and temp_raw.exists():
+                    temp_raw.unlink()
+            except Exception as e:
+                self.logger.warning(f"Failed to delete temp file: {e}")
 
             return success
 
-        except subprocess.TimeoutExpired:
-            self.logger.error("NVENC timeout (>15s)")
-            try:
-                proc.kill()
-            except:
-                pass
-            return False
         except Exception as e:
             self.logger.error(f"NVENC error: {e}")
             import traceback
             traceback.print_exc()
+            
+            # Cleanup on error
+            try:
+                if temp_raw and temp_raw.exists():
+                    temp_raw.unlink()
+            except:
+                pass
+                
             return False
 
     def _encode_chunk_software(self, frames, out_path, fps):
-        """Fallback software encoding using OpenCV"""
+        """Fallback software encoding using OpenCV VideoWriter"""
         try:
             if not frames:
                 return False
 
             h, w = frames[0].shape[:2]
             
-            # Use MJPEG codec for reliability (no external dependencies)
+            self.logger.info(f"Software encoding: {w}x{h} @ {fps}fps, {len(frames)} frames")
+            
+            # Use mp4v codec (widely supported)
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             writer = cv2.VideoWriter(str(out_path), fourcc, fps, (w, h))
 
@@ -449,7 +480,7 @@ class Streamer:
                 self.logger.error("Failed to open VideoWriter")
                 return False
 
-            for frame in frames:
+            for i, frame in enumerate(frames):
                 writer.write(frame)
 
             writer.release()
@@ -457,7 +488,8 @@ class Streamer:
             success = out_path.exists() and out_path.stat().st_size > 0
 
             if success:
-                self.logger.info(f"✓ Software encode succeeded: {out_path.name}")
+                file_size = out_path.stat().st_size
+                self.logger.info(f"✓ Software encode succeeded: {out_path.name} ({file_size} bytes)")
             else:
                 self.logger.error("✗ Software encode produced empty file")
 
@@ -465,6 +497,8 @@ class Streamer:
 
         except Exception as e:
             self.logger.error(f"Software encode error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
@@ -494,13 +528,15 @@ class Streamer:
                 blur_kernel=config.get('motion_blur_kernel'),
                 frame_skip=config.get('motion_frame_skip')
             )
+            self.logger.info("Configuration updated")
         except Exception as e:
             self.logger.warning(f"Failed to update detector settings: {e}")
 
     def stop(self):
         """Stop the streamer gracefully"""
+        self.logger.info(f"Stopping streamer {self.stream_id}...")
         self.running = False
-        time.sleep(0.5)  # Give threads time to exit
+        time.sleep(1)  # Give threads time to exit
         
         try:
             if self in self._instances:
@@ -523,9 +559,9 @@ class Streamer:
 
     @classmethod
     def restart_all(cls):
-        """Restart all active streamers"""
+        """Restart all active streamers (called when config changes)"""
         for inst in list(cls._instances):
             try:
-                inst.logger.info("Restarting streamer (config changed)")
+                inst.logger.info("Config changed - settings will apply to new chunks")
             except Exception:
                 pass
