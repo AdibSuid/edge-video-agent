@@ -35,6 +35,7 @@ def run_continuous_decode(rtsp_url, duration=30):
         'h264parse', '!',
         'nvv4l2decoder', '!',
         'nvvidconv', '!',
+        'video/x-raw,format=BGRx', '!',
         'fakesink', 'sync=false'
     ]
     
@@ -104,6 +105,8 @@ def run_comparison_test(rtsp_url):
             'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=300', '!',
             'rtph264depay', '!', 'h264parse', '!',
             'nvv4l2decoder', '!',
+            'nvvidconv', '!',
+            'video/x-raw,format=BGRx', '!',
             'fakesink', 'sync=false'
         ]),
         ("Software (avdec_h264)", [
@@ -111,6 +114,7 @@ def run_comparison_test(rtsp_url):
             'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=300', '!',
             'rtph264depay', '!', 'h264parse', '!',
             'avdec_h264', '!',
+            'videoconvert', '!',
             'fakesink', 'sync=false'
         ])
     ]
