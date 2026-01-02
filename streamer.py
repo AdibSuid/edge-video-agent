@@ -112,12 +112,14 @@ class Streamer:
         self.logger.info("Starting motion detection loop (lightweight CPU capture)")
         
         # Lightweight capture for motion detection only (downscaled, low FPS)
-        cap = cv2.VideoCapture(self.rtsp_url)
+        cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             self.logger.error("Failed to open RTSP for motion detection")
             return
         
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+        # Minimize latency for better motion detection responsiveness
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer
+        cap.set(cv2.CAP_PROP_FPS, 10)  # Request 10 FPS for motion detection
         
         # Downscale for motion detection (saves CPU)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -126,11 +128,12 @@ class Streamer:
         last_motion_state = False
         frame_count = 0
         last_log = time.time()
+        last_frame_time = time.time()
         
         while self.running:
             ret, frame = cap.read()
             if not ret:
-                time.sleep(0.5)
+                time.sleep(0.1)  # Shorter retry on failure
                 continue
             
             frame_count += 1
@@ -145,12 +148,15 @@ class Streamer:
                 self._log_motion_event("MOTION" if motion else "IDLE", self._get_target_fps())
                 last_motion_state = motion
             
-            # Log activity
-            if time.time() - last_log > 10:
-                self.logger.info(f"Motion detection: {frame_count} frames analyzed (CPU-lightweight)")
+            # Log activity every 30 seconds
+            if time.time() - last_log > 30:
+                fps = frame_count / (time.time() - last_log + 0.001)
+                self.logger.info(f"Motion detection: {frame_count} frames analyzed ({fps:.1f} FPS)")
                 last_log = time.time()
+                frame_count = 0
             
-            time.sleep(0.2)  # 5 FPS for motion detection (very lightweight)
+            # Throttle to ~10 FPS for motion detection (better than old 5 FPS)
+            time.sleep(0.1)
         
         cap.release()
         self.logger.info("Motion detection stopped")
@@ -162,7 +168,7 @@ class Streamer:
         pipeline_running = False
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
-        processed_chunks = set()  # Track which chunks we've already queued
+        last_chunk_check = 0  # Track last time we checked for new chunks
         
         while self.running:
             try:
@@ -172,15 +178,25 @@ class Streamer:
                     time.sleep(1)
                     continue
                 
+                current_time = time.time()
+                
                 # Wait for motion (SAME AS OLD)
                 if not self.motion_active:
                     # Stop pipeline if motion ended
                     if pipeline_running:
                         self.logger.info("⏹ Motion ended. Stopping pipeline...")
+                        
+                        # Give GStreamer time to finalize last chunk
+                        time.sleep(2)
+                        
+                        # Queue any final chunks immediately
+                        self._queue_new_chunks(output_dir)
+                        
                         if self.hw_pipeline:
                             self.hw_pipeline.stop()
                             self.hw_pipeline = None
                         pipeline_running = False
+                        last_chunk_check = 0
                     time.sleep(0.2)  # SAME AS OLD
                     continue
                 
@@ -191,17 +207,13 @@ class Streamer:
                         self.hw_pipeline = HardwarePipeline(self.stream_id, self.rtsp_url, self.config)
                         self.hw_pipeline.start()
                         pipeline_running = True
+                        last_chunk_check = current_time
                         self.logger.info("Hardware pipeline active - chunks saving to tmp/chunks/")
                 
-                # Queue new chunks for upload (SAME AS OLD: upload after creation)
-                if pipeline_running:
-                    chunks = list(output_dir.glob(f'{self.stream_id}_*.mp4'))
-                    for chunk in chunks:
-                        if chunk.name not in processed_chunks:
-                            # Queue for upload
-                            processed_chunks.add(chunk.name)
-                            self._queue_chunk_upload(chunk)
-                            self.logger.info(f"Chunk saved: {chunk}")
+                # Check for new chunks every 2 seconds while recording (avoid checking too frequently)
+                if pipeline_running and (current_time - last_chunk_check) >= 2:
+                    self._queue_new_chunks(output_dir)
+                    last_chunk_check = current_time
                 
                 time.sleep(0.5)
                 
@@ -210,6 +222,19 @@ class Streamer:
                 import traceback
                 traceback.print_exc()
                 time.sleep(5)
+    
+    def _queue_new_chunks(self, output_dir):
+        """Queue newly created chunks for upload - called periodically"""
+        chunks = sorted(output_dir.glob(f'{self.stream_id}_*.mp4'), key=lambda p: p.stat().st_mtime)
+        
+        for chunk in chunks:
+            chunk_age = time.time() - chunk.stat().st_mtime
+            
+            # Only queue chunks that are at least 3 seconds old (finalized by GStreamer)
+            if chunk_age >= 3:
+                # Queue for upload
+                self._queue_chunk_upload(chunk)
+                self.logger.info(f"Chunk saved: {chunk}")
 
     def _queue_chunk_upload(self, chunk_path):
         """Queue chunk for cloud upload"""
