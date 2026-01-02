@@ -365,7 +365,7 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_gstreamer(self, frames, out_path, fps):
-        """Encode video chunk using GStreamer NVENC with filesrc method (fixed pipeline)"""
+        """Encode video chunk using GStreamer NVENC - minimal pipeline"""
         temp_raw = None
         try:
             if not frames:
@@ -374,99 +374,55 @@ class Streamer:
             h, w = frames[0].shape[:2]
             bitrate = int(self.config.get('chunk_bitrate', 2000000))
 
-            # Create temporary raw YUV file
+            # Calculate frame size for I420
+            frame_size = int(w * h * 1.5)  # I420 = Y(w*h) + U(w*h/4) + V(w*h/4)
+            num_frames = len(frames)
+
             temp_raw = Path('tmp/chunks') / f"temp_{self.stream_id}_{int(time.time() * 1000)}.yuv"
             temp_raw.parent.mkdir(parents=True, exist_ok=True)
 
             self.logger.info(f"NVENC encoding: {w}x{h} @ {fps}fps, bitrate={bitrate}, frames={len(frames)}")
 
-            # Write all frames to temporary YUV file
-            try:
-                with open(temp_raw, 'wb') as f:
-                    for i, frame in enumerate(frames):
-                        try:
-                            # Convert BGR to YUV I420
-                            yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
-                            f.write(yuv.tobytes())
-                        except Exception as e:
-                            self.logger.error(f"Frame conversion error at {i}: {e}")
-                            if temp_raw.exists():
-                                temp_raw.unlink()
-                            return False
-                
-                if not temp_raw.exists() or temp_raw.stat().st_size == 0:
-                    self.logger.error("Failed to write temp YUV file (empty or missing)")
-                    return False
-                    
-            except Exception as e:
-                self.logger.error(f"Failed to write temp YUV file: {e}")
-                if temp_raw and temp_raw.exists():
-                    temp_raw.unlink()
-                return False
+            # Write YUV file
+            with open(temp_raw, 'wb') as f:
+                for i, frame in enumerate(frames):
+                    yuv = cv2.cvtColor(frame, cv2.COLOR_BGR2YUV_I420)
+                    f.write(yuv.tobytes())
 
-            # FIXED: Proper GStreamer pipeline with explicit caps
-            pipeline = (
-                f"filesrc location={temp_raw} ! "
-                f"videoparse width={w} height={h} format=i420 framerate={fps}/1 ! "  # Use videoparse instead of rawvideoparse
-                f"video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 ! "
-                f"nvvidconv ! "  # NVIDIA video converter
-                f"video/x-raw(memory:NVMM),format=I420 ! "  # NVMM memory for zero-copy
-                f"nvv4l2h264enc bitrate={bitrate} preset-level=1 insert-sps-pps=true ! "
-                f"h264parse ! "
-                f"qtmux ! "
-                f"filesink location={out_path}"
-            )
+            # SIMPLIFIED PIPELINE - more compatible
+            cmd = [
+                'gst-launch-1.0', '-e',
+                'filesrc', f'location={temp_raw}',
+                '!', 'videoparse', f'width={w}', f'height={h}', 'format=i420', f'framerate={fps}/1',
+                '!', 'nvvidconv',
+                '!', 'nvv4l2h264enc', f'bitrate={bitrate}',
+                '!', 'h264parse',
+                '!', 'qtmux',
+                '!', 'filesink', f'location={out_path}'
+            ]
 
-            # Build command as list (don't use split() - it breaks quoted args)
-            cmd = ['gst-launch-1.0', '-e', pipeline]
+            self.logger.info(f"Running: {' '.join(cmd[:10])}...")
             
-            self.logger.info(f"Running GStreamer NVENC...")
+            result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
             
-            try:
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    timeout=30,
-                    check=False
-                )
-                
-                success = result.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
+            success = result.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
 
-                if success:
-                    file_size = out_path.stat().st_size
-                    self.logger.info(f"✓ NVENC succeeded: {out_path.name} ({file_size} bytes, {len(frames)} frames)")
-                else:
-                    stderr_text = result.stderr.decode('utf-8', errors='ignore')
-                    self.logger.warning(f"✗ NVENC failed (rc={result.returncode})")
-                    # Log full stderr for debugging
-                    if stderr_text:
-                        self.logger.warning(f"GStreamer stderr: {stderr_text[:1000]}")
+            if success:
+                self.logger.info(f"✓ NVENC succeeded: {out_path.name} ({out_path.stat().st_size} bytes)")
+            else:
+                stderr = result.stderr.decode('utf-8', errors='ignore')
+                self.logger.warning(f"✗ NVENC failed: {stderr[:500]}")
 
-            except subprocess.TimeoutExpired:
-                self.logger.error("NVENC timeout (>30s)")
-                success = False
-
-            # Cleanup temp file
-            try:
-                if temp_raw and temp_raw.exists():
-                    temp_raw.unlink()
-            except Exception as e:
-                self.logger.warning(f"Failed to delete temp file: {e}")
+            # Cleanup
+            if temp_raw and temp_raw.exists():
+                temp_raw.unlink()
 
             return success
 
         except Exception as e:
             self.logger.error(f"NVENC error: {e}")
-            import traceback
-            traceback.print_exc()
-            
-            # Cleanup on error
-            try:
-                if temp_raw and temp_raw.exists():
-                    temp_raw.unlink()
-            except:
-                pass
-                
+            if temp_raw and temp_raw.exists():
+                temp_raw.unlink()
             return False
 
     def _encode_chunk_software(self, frames, out_path, fps):
