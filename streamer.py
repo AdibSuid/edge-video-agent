@@ -175,7 +175,27 @@ class Streamer:
                 if not self.motion_active:
                     # Stop pipeline if motion ended
                     if pipeline_running:
-                        self.logger.info("⏹ Motion ended. Stopping pipeline...")
+                        self.logger.info("⏹ Motion ended. Stopping pipeline and saving final chunks...")
+                        
+                        # Wait a moment for final chunk to complete
+                        time.sleep(2)
+                        
+                        # Save all remaining chunks
+                        if hw_chunk_dir.exists():
+                            chunks = list(hw_chunk_dir.glob('*.mp4'))
+                            if chunks:
+                                self.logger.info(f"Saving {len(chunks)} final chunks...")
+                                for chunk in chunks:
+                                    dest = output_dir / chunk.name
+                                    if not dest.exists() and chunk.stat().st_size > 1000:
+                                        try:
+                                            shutil.move(str(chunk), str(dest))
+                                            self.logger.info(f"✓ Saved final chunk: {chunk.name}")
+                                            self._queue_chunk_upload(dest)
+                                        except Exception as e:
+                                            self.logger.error(f"Failed to move final chunk: {e}")
+                        
+                        # Now stop the pipeline
                         if self.hw_pipeline:
                             self.hw_pipeline.stop()
                             self.hw_pipeline = None
@@ -193,25 +213,40 @@ class Streamer:
                         last_chunk_time = current_time
                 
                 # Process chunks while motion is active (OLD BEHAVIOR: continuous during motion)
-                if pipeline_running and hw_chunk_dir.exists():
-                    chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
-                    
-                    for chunk in chunks:
-                        chunk_age = current_time - chunk.stat().st_mtime
+                if pipeline_running:
+                    if hw_chunk_dir.exists():
+                        chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
                         
-                        # Move chunks that are complete (at least 2 seconds old)
-                        if chunk_age > 2:
-                            dest = output_dir / chunk.name
-                            if not dest.exists():
-                                try:
-                                    shutil.move(str(chunk), str(dest))
-                                    self.logger.info(f"✓ Saved motion chunk: {chunk.name}")
-                                    last_chunk_time = current_time
-                                    
-                                    # Queue for upload (same as old version)
-                                    self._queue_chunk_upload(dest)
-                                except Exception as e:
-                                    self.logger.error(f"Failed to move chunk: {e}")
+                        if chunks and current_time - last_chunk_time > 3:
+                            self.logger.info(f"Motion active: Found {len(chunks)} chunks in {hw_chunk_dir}")
+                            last_chunk_time = current_time
+                        
+                        for chunk in chunks:
+                            chunk_age = current_time - chunk.stat().st_mtime
+                            chunk_size = chunk.stat().st_size
+                            
+                            # Move chunks that are complete:
+                            # 1. At least 3 seconds old (chunk_duration=5s, so previous chunk is complete)
+                            # 2. Has some data (not empty)
+                            if chunk_age > 3 and chunk_size > 1000:
+                                dest = output_dir / chunk.name
+                                if not dest.exists():
+                                    try:
+                                        shutil.move(str(chunk), str(dest))
+                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes)")
+                                        
+                                        # Queue for upload (same as old version)
+                                        self._queue_chunk_upload(dest)
+                                    except Exception as e:
+                                        self.logger.error(f"Failed to move chunk {chunk.name}: {e}")
+                            else:
+                                if chunk_age <= 3:
+                                    self.logger.debug(f"Chunk {chunk.name} too new ({chunk_age:.1f}s), waiting...")
+                    else:
+                        # Log if chunk directory doesn't exist yet
+                        if current_time - last_chunk_time > 5:
+                            self.logger.warning(f"Pipeline running but {hw_chunk_dir} doesn't exist yet")
+                            last_chunk_time = current_time
                 
                 time.sleep(0.5)  # Check frequently like old version
                 
