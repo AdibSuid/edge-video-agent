@@ -156,12 +156,12 @@ class Streamer:
         self.logger.info("Motion detection stopped")
 
     def _pipeline_manager_loop(self):
-        """Start/stop hardware pipeline based on motion detection"""
+        """Start/stop hardware pipeline based on motion detection - matches old behavior"""
         self.logger.info("Starting pipeline manager (motion-triggered)")
         
         pipeline_running = False
-        last_motion_time = 0
-        keep_duration = int(self.config.get('motion_cooldown', 10))
+        last_chunk_time = 0
+        chunk_duration = int(self.config.get('chunk_duration', 5))
         
         hw_chunk_dir = Path('tmp/hw_chunks') / self.stream_id
         output_dir = Path('tmp/chunks')
@@ -171,62 +171,49 @@ class Streamer:
             try:
                 current_time = time.time()
                 
-                # Check if we should be recording
-                if self.motion_active:
-                    last_motion_time = current_time
+                # OLD BEHAVIOR: Wait for motion, just like the old version
+                if not self.motion_active:
+                    # Stop pipeline if motion ended
+                    if pipeline_running:
+                        self.logger.info("⏹ Motion ended. Stopping pipeline...")
+                        if self.hw_pipeline:
+                            self.hw_pipeline.stop()
+                            self.hw_pipeline = None
+                        pipeline_running = False
+                    time.sleep(0.2)  # Same as old version
+                    continue
                 
-                time_since_motion = current_time - last_motion_time
-                should_record = time_since_motion < keep_duration
-                
-                # Start pipeline when motion detected
-                if should_record and not pipeline_running:
+                # Motion is active - ensure pipeline is running
+                if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
                         self.logger.info("🎬 Motion detected! Starting hardware pipeline...")
                         self.hw_pipeline = HardwarePipeline(self.stream_id, self.rtsp_url, self.config)
                         self.hw_pipeline.start()
                         pipeline_running = True
+                        last_chunk_time = current_time
                 
-                # Stop pipeline after cooldown period
-                elif not should_record and pipeline_running:
-                    self.logger.info("⏹ Motion cooldown ended. Stopping pipeline...")
-                    if self.hw_pipeline:
-                        self.hw_pipeline.stop()
-                        self.hw_pipeline = None
-                    pipeline_running = False
-                
-                # If pipeline is running, move chunks to output and queue for upload
+                # Process chunks while motion is active (OLD BEHAVIOR: continuous during motion)
                 if pipeline_running and hw_chunk_dir.exists():
                     chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
                     
                     for chunk in chunks:
-                        # Move completed chunks to output directory
                         chunk_age = current_time - chunk.stat().st_mtime
                         
-                        # Only move chunks that are at least 2 seconds old (ensures they're complete)
+                        # Move chunks that are complete (at least 2 seconds old)
                         if chunk_age > 2:
                             dest = output_dir / chunk.name
                             if not dest.exists():
                                 try:
                                     shutil.move(str(chunk), str(dest))
                                     self.logger.info(f"✓ Saved motion chunk: {chunk.name}")
+                                    last_chunk_time = current_time
                                     
-                                    # Queue for upload
+                                    # Queue for upload (same as old version)
                                     self._queue_chunk_upload(dest)
                                 except Exception as e:
                                     self.logger.error(f"Failed to move chunk: {e}")
                 
-                # Cleanup old chunks when pipeline is stopped
-                elif not pipeline_running and hw_chunk_dir.exists():
-                    chunks = list(hw_chunk_dir.glob('*.mp4'))
-                    if chunks:
-                        self.logger.info(f"Cleaning up {len(chunks)} leftover chunks...")
-                        for chunk in chunks:
-                            try:
-                                chunk.unlink()
-                            except Exception as e:
-                                self.logger.error(f"Failed to delete chunk: {e}")
-                
-                time.sleep(1)  # Check every second
+                time.sleep(0.5)  # Check frequently like old version
                 
             except Exception as e:
                 self.logger.error(f"Pipeline manager error: {e}")
