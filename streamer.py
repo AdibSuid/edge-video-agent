@@ -186,16 +186,23 @@ class Streamer:
                     if pipeline_running:
                         self.logger.info("⏹ Motion ended. Stopping pipeline...")
                         
-                        # Give GStreamer time to finalize last chunk
-                        time.sleep(2)
-                        
-                        # Queue any final chunks immediately
-                        self._queue_new_chunks(output_dir)
-                        
+                        # Stop the pipeline first
                         if self.hw_pipeline:
                             self.hw_pipeline.stop()
                             self.hw_pipeline = None
                         pipeline_running = False
+                        
+                        # Give GStreamer time to finalize and close all files
+                        time.sleep(3)
+                        
+                        # Now queue ALL remaining chunks (all are complete since pipeline stopped)
+                        chunks = sorted(output_dir.glob(f'{self.stream_id}_*.mp4'), key=lambda p: p.stat().st_mtime)
+                        for chunk in chunks:
+                            chunk_size = chunk.stat().st_size
+                            if chunk_size > 100000:  # Valid chunk
+                                self._queue_chunk_upload(chunk)
+                                self.logger.info(f"Final chunk saved: {chunk} ({chunk_size} bytes)")
+                        
                         last_chunk_check = 0
                     time.sleep(0.2)  # SAME AS OLD
                     continue
@@ -227,14 +234,23 @@ class Streamer:
         """Queue newly created chunks for upload - called periodically"""
         chunks = sorted(output_dir.glob(f'{self.stream_id}_*.mp4'), key=lambda p: p.stat().st_mtime)
         
-        for chunk in chunks:
-            chunk_age = time.time() - chunk.stat().st_mtime
-            
-            # Only queue chunks that are at least 3 seconds old (finalized by GStreamer)
-            if chunk_age >= 3:
-                # Queue for upload
-                self._queue_chunk_upload(chunk)
-                self.logger.info(f"Chunk saved: {chunk}")
+        # Only upload chunks EXCEPT the most recent one (which might still be writing)
+        # GStreamer's splitmuxsink writes to the current chunk until max_size_time is reached
+        if len(chunks) > 1:
+            # Upload all chunks except the last one (the last one is still being written)
+            for chunk in chunks[:-1]:
+                chunk_size = chunk.stat().st_size
+                
+                # Sanity check: ensure chunk has reasonable size (> 100KB)
+                if chunk_size > 100000:
+                    # Queue for upload
+                    self._queue_chunk_upload(chunk)
+                    self.logger.info(f"Chunk saved: {chunk} ({chunk_size} bytes)")
+                else:
+                    self.logger.warning(f"Chunk too small (possibly corrupted): {chunk} ({chunk_size} bytes)")
+        else:
+            # Only 1 chunk exists - wait for the next one to be created before uploading
+            pass
 
     def _queue_chunk_upload(self, chunk_path):
         """Queue chunk for cloud upload"""
