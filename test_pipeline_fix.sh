@@ -19,7 +19,8 @@ echo "✓ Step 1 complete"
 echo ""
 echo "2. Testing hardware decode (5 seconds)..."
 timeout 5 gst-launch-1.0 -v \
-  rtspsrc location="$RTSP_URL" latency=200 protocols=tcp ! \
+  rtspsrc location="$RTSP_URL" latency=200 protocols=tcp drop-on-latency=true ! \
+  "application/x-rtp,media=video" ! \
   rtph264depay ! \
   h264parse ! \
   queue max-size-buffers=2 leaky=downstream ! \
@@ -34,7 +35,8 @@ echo "3. Testing full pipeline (10 seconds - creating video chunks)..."
 mkdir -p tmp/test_chunks
 
 timeout 10 gst-launch-1.0 -e \
-  rtspsrc location="$RTSP_URL" latency=200 protocols=tcp retry=3 timeout=10000000 ! \
+  rtspsrc location="$RTSP_URL" latency=200 protocols=tcp retry=3 timeout=10000000 drop-on-latency=true ! \
+  "application/x-rtp,media=video" ! \
   rtph264depay ! \
   h264parse ! \
   queue max-size-buffers=2 leaky=downstream ! \
