@@ -81,9 +81,32 @@ def load_config():
     return config
 
 def save_config():
-    """Save configuration to YAML file"""
-    with open(config_file, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+    """Save configuration to YAML file with atomic write"""
+    import tempfile
+    import shutil
+
+    # Write to a temporary file first (atomic write)
+    try:
+        # Create temp file in the same directory as config_file
+        config_dir = config_file.parent
+        with tempfile.NamedTemporaryFile(mode='w', dir=config_dir, delete=False, suffix='.tmp') as tmp_file:
+            yaml.dump(config, tmp_file, default_flow_style=False)
+            tmp_path = Path(tmp_file.name)
+
+        # Make temp file readable by everyone (in case of permission issues)
+        tmp_path.chmod(0o644)
+
+        # Atomic rename (replaces old file)
+        shutil.move(str(tmp_path), str(config_file))
+
+    except Exception as e:
+        # Clean up temp file if it exists
+        if 'tmp_path' in locals() and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except:
+                pass
+        raise  # Re-raise the original exception
 
 def init_services():
     """Initialize background services"""
@@ -767,9 +790,13 @@ def api_change_camera_id():
 
         return jsonify({'success': True})
     except PermissionError as e:
-        error_msg = f"Permission denied: {e}. Check file permissions in logs/ and tmp/chunks/ directories."
+        import os
+        # Provide detailed permission information
+        error_msg = f"Permission denied: {e}"
         print(f"Error changing camera ID: {error_msg}")
-        return jsonify({'success': False, 'error': error_msg}), 500
+        print(f"Current user: {os.getuid() if hasattr(os, 'getuid') else 'N/A'}")
+        print(f"Config file permissions: {oct(config_file.stat().st_mode) if config_file.exists() else 'N/A'}")
+        return jsonify({'success': False, 'error': f"{error_msg}. Run as: sudo python app.py or check file permissions."}), 500
     except Exception as e:
         import traceback
         error_msg = f"{type(e).__name__}: {str(e)}"
