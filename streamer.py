@@ -210,43 +210,45 @@ class Streamer:
                         self.hw_pipeline = HardwarePipeline(self.stream_id, self.rtsp_url, self.config)
                         self.hw_pipeline.start()
                         pipeline_running = True
-                        last_chunk_time = current_time
+                        last_chunk_time = 0  # Reset to enable immediate logging
+                        self.logger.info(f"Chunks will be created in: {hw_chunk_dir}")
                 
                 # Process chunks while motion is active (OLD BEHAVIOR: continuous during motion)
                 if pipeline_running:
                     if hw_chunk_dir.exists():
                         chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
                         
-                        if chunks and current_time - last_chunk_time > 3:
-                            self.logger.info(f"Motion active: Found {len(chunks)} chunks in {hw_chunk_dir}")
-                            last_chunk_time = current_time
+                        # Always log when chunks are found
+                        if chunks:
+                            self.logger.info(f"📹 Found {len(chunks)} chunks in {hw_chunk_dir}")
                         
                         for chunk in chunks:
                             chunk_age = current_time - chunk.stat().st_mtime
                             chunk_size = chunk.stat().st_size
                             
+                            self.logger.info(f"Processing {chunk.name}: age={chunk_age:.1f}s, size={chunk_size} bytes")
+                            
                             # Move chunks that are complete:
-                            # 1. At least 3 seconds old (chunk_duration=5s, so previous chunk is complete)
+                            # 1. At least 1 second old (ensure file is closed by GStreamer)
                             # 2. Has some data (not empty)
-                            if chunk_age > 3 and chunk_size > 1000:
+                            if chunk_age > 1 and chunk_size > 1000:
                                 dest = output_dir / chunk.name
                                 if not dest.exists():
                                     try:
                                         shutil.move(str(chunk), str(dest))
-                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes)")
+                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes) to {dest}")
                                         
                                         # Queue for upload (same as old version)
                                         self._queue_chunk_upload(dest)
                                     except Exception as e:
                                         self.logger.error(f"Failed to move chunk {chunk.name}: {e}")
+                                else:
+                                    self.logger.warning(f"Destination already exists: {dest}")
                             else:
-                                if chunk_age <= 3:
-                                    self.logger.debug(f"Chunk {chunk.name} too new ({chunk_age:.1f}s), waiting...")
+                                self.logger.debug(f"Waiting for chunk to complete: age={chunk_age:.1f}s, size={chunk_size}")
                     else:
                         # Log if chunk directory doesn't exist yet
-                        if current_time - last_chunk_time > 5:
-                            self.logger.warning(f"Pipeline running but {hw_chunk_dir} doesn't exist yet")
-                            last_chunk_time = current_time
+                        self.logger.warning(f"⚠ Pipeline running but directory missing: {hw_chunk_dir}")
                 
                 time.sleep(0.5)  # Check frequently like old version
                 
