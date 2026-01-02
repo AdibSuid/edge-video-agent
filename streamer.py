@@ -365,7 +365,7 @@ class Streamer:
             time.sleep(0.5)
 
     def _encode_chunk_gstreamer(self, frames, out_path, fps):
-        """Encode video chunk using GStreamer NVENC with filesrc method (most reliable)"""
+        """Encode video chunk using GStreamer NVENC with filesrc method (fixed pipeline)"""
         temp_raw = None
         try:
             if not frames:
@@ -404,17 +404,21 @@ class Streamer:
                     temp_raw.unlink()
                 return False
 
-            # Encode with GStreamer using filesrc
+            # FIXED: Proper GStreamer pipeline with explicit caps
             pipeline = (
                 f"filesrc location={temp_raw} ! "
-                f"rawvideoparse width={w} height={h} format=i420 framerate={fps}/1 ! "
+                f"videoparse width={w} height={h} format=i420 framerate={fps}/1 ! "  # Use videoparse instead of rawvideoparse
+                f"video/x-raw,format=I420,width={w},height={h},framerate={fps}/1 ! "
+                f"nvvidconv ! "  # NVIDIA video converter
+                f"video/x-raw(memory:NVMM),format=I420 ! "  # NVMM memory for zero-copy
                 f"nvv4l2h264enc bitrate={bitrate} preset-level=1 insert-sps-pps=true ! "
                 f"h264parse ! "
                 f"qtmux ! "
                 f"filesink location={out_path}"
             )
 
-            cmd = ['gst-launch-1.0', '-e'] + pipeline.split()
+            # Build command as list (don't use split() - it breaks quoted args)
+            cmd = ['gst-launch-1.0', '-e', pipeline]
             
             self.logger.info(f"Running GStreamer NVENC...")
             
@@ -432,8 +436,11 @@ class Streamer:
                     file_size = out_path.stat().st_size
                     self.logger.info(f"✓ NVENC succeeded: {out_path.name} ({file_size} bytes, {len(frames)} frames)")
                 else:
-                    stderr_text = result.stderr.decode('utf-8', errors='ignore')[:500]
-                    self.logger.warning(f"✗ NVENC failed (rc={result.returncode}): {stderr_text}")
+                    stderr_text = result.stderr.decode('utf-8', errors='ignore')
+                    self.logger.warning(f"✗ NVENC failed (rc={result.returncode})")
+                    # Log full stderr for debugging
+                    if stderr_text:
+                        self.logger.warning(f"GStreamer stderr: {stderr_text[:1000]}")
 
             except subprocess.TimeoutExpired:
                 self.logger.error("NVENC timeout (>30s)")
