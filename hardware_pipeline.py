@@ -15,10 +15,11 @@ import os
 class HardwarePipeline:
     """Manages pure GStreamer hardware pipeline for continuous NVDEC/NVENC usage"""
     
-    def __init__(self, stream_id, rtsp_url, config):
+    def __init__(self, stream_id, rtsp_url, config, output_file=None):
         self.stream_id = stream_id
         self.rtsp_url = rtsp_url
         self.config = config
+        self.output_file = output_file  # Single output file for entire motion event
         self.process = None
         self.running = False
         self.logger = self._setup_logger()
@@ -47,26 +48,31 @@ class HardwarePipeline:
         self.logger.info("✓ Hardware pipeline started")
     
     def _run_pipeline(self):
-        """Run the GStreamer pipeline process with auto-reconnect"""
-        # Save directly to tmp/chunks like old version (no intermediate hw_chunks)
+        """Run the GStreamer pipeline process - records ONE continuous file per motion event"""
+        # Save directly to tmp/chunks like old version
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        bitrate = int(self.config.get('chunk_bitrate', 2000000))
-        chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000
+        # Use the provided output file or generate one
+        if not self.output_file:
+            import uuid
+            chunk_id = str(uuid.uuid4())[:8]
+            self.output_file = output_dir / f"{self.stream_id}_{chunk_id}.mp4"
+        else:
+            self.output_file = Path(self.output_file)
         
-        # Pure GStreamer pipeline with error handling
-        # COMMUNITY STANDARD: Use uridecodebin to handle dynamic pads automatically
-        # COMMUNITY FIX: Use qtmux with fragment-duration for reliable MP4 muxing
-        # COMMUNITY FIX: Add protocols and latency settings to fix HEVC POC errors
+        bitrate = int(self.config.get('chunk_bitrate', 2000000))
+        
+        # COMMERCIAL CCTV MODE: Record entire motion event as ONE continuous video
+        # No splitmuxsink, just direct MP4 recording
         pipeline = [
             'gst-launch-1.0', '-e',
             'uridecodebin',
             f'uri={self.rtsp_url}',
-            'protocols=tcp',  # COMMUNITY FIX: Force TCP to avoid packet loss (UDP causes POC errors)
-            'latency=200',    # COMMUNITY FIX: Add latency buffer for reference frame recovery
+            'protocols=tcp',  # Force TCP to avoid packet loss
+            'latency=200',    # Add latency buffer for reference frame recovery
             '!', 'queue',
-            'max-size-buffers=10',  # COMMUNITY FIX: Increase buffer to handle frame reordering
+            'max-size-buffers=10',
             'leaky=downstream',
             '!', 'nvvidconv',
             '!', 'video/x-raw(memory:NVMM),format=I420',
@@ -74,71 +80,49 @@ class HardwarePipeline:
             f'bitrate={bitrate}',
             'preset-level=1',
             'insert-sps-pps=true',
-            'idrinterval=30',  # Insert keyframe every 30 frames for proper splitting
+            'idrinterval=30',  # Regular keyframes for seekability
             '!', 'h264parse',
-            '!', 'video/x-h264,stream-format=avc,alignment=au',  # Proper format for MP4
-            '!', 'splitmuxsink',
-            f'location={output_dir}/{self.stream_id}_%05d.mp4',
-            f'max-size-time={chunk_duration_ns}',
-            'max-files=100',
-            'muxer=qtmux',  # COMMUNITY FIX: Explicitly use qtmux instead of mp4mux
-            'muxer-properties=properties,faststart=true,fragment-duration=1000'  # Fragmented MP4
+            '!', 'video/x-h264,stream-format=avc,alignment=au',
+            '!', 'qtmux',  # Direct MP4 muxing (no splitting)
+            'faststart=true',
+            'fragment-duration=1000',
+            '!', 'filesink',
+            f'location={self.output_file}',
+            'sync=false'  # Don't block on disk writes
         ]
         
-        self.logger.info(f"Starting pipeline with auto-reconnect...")
-        self.logger.info(f"Full command: {' '.join(pipeline)}")
+        self.logger.info(f"Recording motion event to: {self.output_file}")
+        self.logger.info(f"Pipeline command: {' '.join(pipeline)}")
         
-        while self.running:
-            try:
-                self.process = subprocess.Popen(
-                    pipeline,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    preexec_fn=os.setsid
-                )
+        # Start pipeline (no auto-reconnect, just record this one event)
+        try:
+            self.process = subprocess.Popen(
+                pipeline,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid
+            )
+            
+            self.logger.info("✓ NVDEC + NVENC pipeline active - recording motion event")
+            
+            # Monitor stderr for errors
+            for line in self.process.stderr:
+                line_str = line.decode('utf-8', errors='ignore').strip()
                 
-                self.logger.info("✓ NVDEC + NVENC pipeline active")
-                
-                # Monitor stderr
-                error_count = 0
-                for line in self.process.stderr:
-                    line_str = line.decode('utf-8', errors='ignore').strip()
-                    
-                    # Log all lines to help debug not-linked errors
-                    if line_str:
-                        if 'not-linked' in line_str.lower():
-                            self.logger.error(f"NOT-LINKED ERROR: {line_str}")
-                            error_count += 10  # Force restart on not-linked
-                        elif 'ERROR' in line_str:
-                            error_count += 1
-                            self.logger.error(f"GStreamer: {line_str}")
-                        elif 'WARNING' in line_str:
-                            self.logger.warning(f"GStreamer: {line_str}")
-                        elif 'Setting pipeline to PAUSED' in line_str or 'Setting pipeline to PLAYING' in line_str:
-                            self.logger.info(f"GStreamer: {line_str}")
-                    
-                    # Too many errors, restart
-                    if error_count > 5:
-                            self.logger.warning("Too many errors, restarting pipeline...")
-                            break
+                if line_str:
+                    if 'ERROR' in line_str:
+                        self.logger.error(f"GStreamer: {line_str}")
                     elif 'WARNING' in line_str:
                         self.logger.warning(f"GStreamer: {line_str}")
+            
+            # Process ended
+            self.process.wait()
+            self.logger.info(f"Recording complete: {self.output_file}")
                 
-                # Process ended
-                self.process.wait()
-                
-                if self.running:
-                    self.logger.warning("Pipeline ended, reconnecting in 3s...")
-                    time.sleep(3)
-                else:
-                    break
-                    
-            except Exception as e:
-                self.logger.error(f"Pipeline exception: {e}")
-                if self.running:
-                    time.sleep(3)
-                else:
-                    break
+        except Exception as e:
+            self.logger.error(f"Pipeline exception: {e}")
+        finally:
+            self.running = False
         
         self.logger.info("Hardware pipeline stopped")
     

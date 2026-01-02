@@ -162,65 +162,70 @@ class Streamer:
         self.logger.info("Motion detection stopped")
 
     def _pipeline_manager_loop(self):
-        """Start/stop hardware pipeline based on motion detection - SAME AS OLD VERSION"""
-        self.logger.info("Starting pipeline manager (motion-triggered)")
+        """Start/stop hardware pipeline based on motion - ONE CONTINUOUS FILE per event"""
+        self.logger.info("Starting pipeline manager (motion-triggered continuous recording)")
         
         pipeline_running = False
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
-        last_chunk_check = 0  # Track last time we checked for new chunks
+        current_output_file = None
         
         while self.running:
             try:
-                # Check config for chunking enabled (SAME AS OLD)
+                # Check config for chunking enabled
                 chunking_enabled = self.config.get('chunking_enabled', False)
                 if not chunking_enabled:
                     time.sleep(1)
                     continue
                 
-                current_time = time.time()
-                
-                # Wait for motion (SAME AS OLD)
+                # Wait for motion
                 if not self.motion_active:
                     # Stop pipeline if motion ended
                     if pipeline_running:
                         self.logger.info("⏹ Motion ended. Stopping pipeline...")
                         
-                        # Stop the pipeline first
+                        # Stop the pipeline
                         if self.hw_pipeline:
                             self.hw_pipeline.stop()
                             self.hw_pipeline = None
                         pipeline_running = False
                         
-                        # Give GStreamer time to finalize and close all files
-                        time.sleep(3)
+                        # Give GStreamer time to finalize the file
+                        time.sleep(2)
                         
-                        # Now queue ALL remaining chunks (all are complete since pipeline stopped)
-                        chunks = sorted(output_dir.glob(f'{self.stream_id}_*.mp4'), key=lambda p: p.stat().st_mtime)
-                        for chunk in chunks:
-                            chunk_size = chunk.stat().st_size
-                            if chunk_size > 100000:  # Valid chunk
-                                self._queue_chunk_upload(chunk)
-                                self.logger.info(f"Final chunk saved: {chunk} ({chunk_size} bytes)")
+                        # Upload the complete motion event file
+                        if current_output_file and Path(current_output_file).exists():
+                            file_size = Path(current_output_file).stat().st_size
+                            if file_size > 100000:  # Valid file
+                                self._queue_chunk_upload(Path(current_output_file))
+                                self.logger.info(f"✓ Motion event saved: {current_output_file} ({file_size} bytes)")
+                            else:
+                                self.logger.warning(f"⚠ File too small: {current_output_file} ({file_size} bytes)")
                         
-                        last_chunk_check = 0
-                    time.sleep(0.2)  # SAME AS OLD
+                        current_output_file = None
+                    
+                    time.sleep(0.2)
                     continue
                 
-                # Motion is active - ensure pipeline is running (SAME AS OLD)
+                # Motion is active - start pipeline for this event
                 if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
-                        self.logger.info("🎬 Motion detected! Starting hardware pipeline...")
-                        self.hw_pipeline = HardwarePipeline(self.stream_id, self.rtsp_url, self.config)
+                        # Generate unique filename for this motion event
+                        timestamp = int(time.time())
+                        current_output_file = str(output_dir / f'{self.stream_id}_{timestamp}.mp4')
+                        
+                        self.logger.info(f"🎬 Motion detected! Recording to: {current_output_file}")
+                        
+                        # Start hardware pipeline with specific output file
+                        self.hw_pipeline = HardwarePipeline(
+                            self.stream_id, 
+                            self.rtsp_url, 
+                            self.config,
+                            output_file=current_output_file
+                        )
                         self.hw_pipeline.start()
                         pipeline_running = True
-                        last_chunk_check = current_time
-                        self.logger.info("Hardware pipeline active - chunks saving to tmp/chunks/")
-                
-                # Check for new chunks every 2 seconds while recording (avoid checking too frequently)
-                if pipeline_running and (current_time - last_chunk_check) >= 2:
-                    self._queue_new_chunks(output_dir)
-                    last_chunk_check = current_time
+                        self.logger.info("✓ Hardware pipeline recording continuous motion event")
                 
                 time.sleep(0.5)
                 
@@ -230,28 +235,6 @@ class Streamer:
                 traceback.print_exc()
                 time.sleep(5)
     
-    def _queue_new_chunks(self, output_dir):
-        """Queue newly created chunks for upload - called periodically"""
-        chunks = sorted(output_dir.glob(f'{self.stream_id}_*.mp4'), key=lambda p: p.stat().st_mtime)
-        
-        # Only upload chunks EXCEPT the most recent one (which might still be writing)
-        # GStreamer's splitmuxsink writes to the current chunk until max_size_time is reached
-        if len(chunks) > 1:
-            # Upload all chunks except the last one (the last one is still being written)
-            for chunk in chunks[:-1]:
-                chunk_size = chunk.stat().st_size
-                
-                # Sanity check: ensure chunk has reasonable size (> 100KB)
-                if chunk_size > 100000:
-                    # Queue for upload
-                    self._queue_chunk_upload(chunk)
-                    self.logger.info(f"Chunk saved: {chunk} ({chunk_size} bytes)")
-                else:
-                    self.logger.warning(f"Chunk too small (possibly corrupted): {chunk} ({chunk_size} bytes)")
-        else:
-            # Only 1 chunk exists - wait for the next one to be created before uploading
-            pass
-
     def _queue_chunk_upload(self, chunk_path):
         """Queue chunk for cloud upload"""
         try:
