@@ -13,7 +13,7 @@ def print_section(title):
     print(f"  {title}")
     print("="*70)
 
-def run_command(cmd, description):
+def run_command(cmd, description, timeout=10):
     """Run command and return success status and output"""
     print(f"\n{description}")
     print(f"Command: {' '.join(cmd)}")
@@ -23,7 +23,7 @@ def run_command(cmd, description):
             cmd,
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=timeout
         )
         
         if result.returncode == 0:
@@ -166,50 +166,68 @@ def test_decoder_with_rtsp(rtsp_url):
     print_section("4. Hardware Decoder Test with RTSP")
     
     print(f"RTSP URL: {rtsp_url}")
+    print("Note: Testing with limited frames (100 frames ~3-4 seconds)")
     
     # Test 1: Software decode baseline
     print("\n--- Baseline: Software decode ---")
     cmd = [
-        'gst-launch-1.0',
-        'rtspsrc', f'location={rtsp_url}', 'latency=200', '!',
+        'gst-launch-1.0', '-e',  # -e for clean shutdown
+        'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=100', '!',
         'rtph264depay', '!',
         'h264parse', '!',
         'avdec_h264', '!',  # Software decoder
-        'fakesink'
+        'fakesink', 'sync=false'
     ]
     
-    sw_success, _ = run_command(cmd, "Software decoder test (5s)")
+    sw_success, _ = run_command(cmd, "Software decoder test (100 frames)", timeout=15)
     
     # Test 2: Hardware decode
     print("\n--- Hardware decode test ---")
     cmd = [
-        'gst-launch-1.0',
-        'rtspsrc', f'location={rtsp_url}', 'latency=200', '!',
+        'gst-launch-1.0', '-e',  # -e for clean shutdown
+        'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=100', '!',
         'rtph264depay', '!',
         'h264parse', '!',
         'nvv4l2decoder', '!',
-        'fakesink'
+        'nvvidconv', '!',
+        'fakesink', 'sync=false'
     ]
     
-    hw_success, hw_output = run_command(cmd, "Hardware decoder test (5s)")
+    hw_success, hw_output = run_command(cmd, "Hardware decoder test (100 frames)", timeout=15)
     
     if not hw_success and sw_success:
         print("\n⚠ Hardware decoder failed but software works")
         print("This suggests the decoder plugin has issues with RTSP stream format")
         
         # Try alternative approaches
-        print("\n--- Trying alternative: enable-last-sample=false ---")
+        print("\n--- Trying alternative: explicit stream format ---")
         cmd = [
-            'gst-launch-1.0',
-            'rtspsrc', f'location={rtsp_url}', 'latency=200', '!',
+            'gst-launch-1.0', '-e',
+            'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=100', '!',
             'rtph264depay', '!',
             'h264parse', '!',
-            'video/x-h264,stream-format=byte-stream', '!',
+            'video/x-h264,stream-format=byte-stream,alignment=au', '!',
             'nvv4l2decoder', 'enable-max-performance=1', '!',
-            'fakesink'
+            'nvvidconv', '!',
+            'fakesink', 'sync=false'
         ]
         
-        alt_success, _ = run_command(cmd, "Alternative format test")
+        alt_success, _ = run_command(cmd, "Alternative format test", timeout=15)
+        
+        if not alt_success:
+            print("\n--- Trying alternative: omxh264dec (older Jetson) ---")
+            cmd = [
+                'gst-launch-1.0', '-e',
+                'rtspsrc', f'location={rtsp_url}', 'latency=200', 'num-buffers=100', '!',
+                'rtph264depay', '!',
+                'h264parse', '!',
+                'omxh264dec', '!',
+                'nvvidconv', '!',
+                'fakesink', 'sync=false'
+            ]
+            
+            omx_success, _ = run_command(cmd, "OMX decoder test", timeout=15)
+            return omx_success
         
         return alt_success
     
