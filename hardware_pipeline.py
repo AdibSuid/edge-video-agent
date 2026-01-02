@@ -69,11 +69,15 @@ class HardwarePipeline:
             f'bitrate={bitrate}',
             'preset-level=1',
             'insert-sps-pps=true',
+            'idrinterval=30',  # Insert keyframe every 30 frames for proper splitting
             '!', 'h264parse',
+            'config-interval=-1',  # Insert config (SPS/PPS) in every IDR frame
+            '!', 'video/x-h264,stream-format=avc,alignment=au',  # Proper format for MP4
             '!', 'splitmuxsink',
             f'location={output_dir}/{self.stream_id}_%05d.mp4',
             f'max-size-time={chunk_duration_ns}',
-            'max-files=100'
+            'max-files=100',
+            'muxer-properties="properties,streamable=true"'  # Make MP4 streamable
         ]
         
         self.logger.info(f"Starting pipeline with auto-reconnect...")
