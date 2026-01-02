@@ -56,6 +56,7 @@ class HardwarePipeline:
         
         # Pure GStreamer pipeline with error handling
         # COMMUNITY STANDARD: Use uridecodebin to handle dynamic pads automatically
+        # COMMUNITY FIX: Use qtmux with fragment-duration for reliable MP4 muxing
         pipeline = [
             'gst-launch-1.0', '-e',
             'uridecodebin',
@@ -71,13 +72,13 @@ class HardwarePipeline:
             'insert-sps-pps=true',
             'idrinterval=30',  # Insert keyframe every 30 frames for proper splitting
             '!', 'h264parse',
-            'config-interval=-1',  # Insert config (SPS/PPS) in every IDR frame
             '!', 'video/x-h264,stream-format=avc,alignment=au',  # Proper format for MP4
             '!', 'splitmuxsink',
             f'location={output_dir}/{self.stream_id}_%05d.mp4',
             f'max-size-time={chunk_duration_ns}',
             'max-files=100',
-            'muxer-properties="properties,streamable=true"'  # Make MP4 streamable
+            'muxer=qtmux',  # COMMUNITY FIX: Explicitly use qtmux instead of mp4mux
+            'muxer-properties=properties,faststart=true,fragment-duration=1000'  # Fragmented MP4
         ]
         
         self.logger.info(f"Starting pipeline with auto-reconnect...")
