@@ -181,13 +181,20 @@ class Streamer:
                 # Get all chunks from hardware pipeline
                 chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
                 
+                if chunks and self.motion_active:
+                    self.logger.info(f"Motion active! Found {len(chunks)} chunks to process")
+                
                 for chunk in chunks:
                     chunk_age = time.time() - chunk.stat().st_mtime
                     
                     # Keep chunks from last motion period + cooldown
                     time_since_motion = time.time() - last_motion_time
                     
-                    if time_since_motion < keep_duration + 5:  # Keep recent chunks during/after motion
+                    # Save chunks if motion happened recently
+                    # Add buffer to account for chunk encoding/processing delays
+                    save_window = keep_duration + 15  # cooldown + 15s buffer for processing
+                    
+                    if time_since_motion < save_window:  # Keep recent chunks during/after motion
                         # Move to output directory for upload
                         dest = output_dir / chunk.name
                         if not dest.exists():
