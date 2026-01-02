@@ -57,12 +57,15 @@ class HardwarePipeline:
         # Pure GStreamer pipeline with error handling
         # COMMUNITY STANDARD: Use uridecodebin to handle dynamic pads automatically
         # COMMUNITY FIX: Use qtmux with fragment-duration for reliable MP4 muxing
+        # COMMUNITY FIX: Add protocols and latency settings to fix HEVC POC errors
         pipeline = [
             'gst-launch-1.0', '-e',
             'uridecodebin',
             f'uri={self.rtsp_url}',
+            'protocols=tcp',  # COMMUNITY FIX: Force TCP to avoid packet loss (UDP causes POC errors)
+            'latency=200',    # COMMUNITY FIX: Add latency buffer for reference frame recovery
             '!', 'queue',
-            'max-size-buffers=2',
+            'max-size-buffers=10',  # COMMUNITY FIX: Increase buffer to handle frame reordering
             'leaky=downstream',
             '!', 'nvvidconv',
             '!', 'video/x-raw(memory:NVMM),format=I420',
