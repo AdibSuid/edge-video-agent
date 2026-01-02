@@ -4,8 +4,8 @@
 echo "Testing GStreamer hardware pipeline..."
 echo ""
 
-# Replace with your actual RTSP URL
-RTSP_URL="rtsp://192.168.0.14:554/stream1?subtype=0"
+# Replace with your actual RTSP URL (with authentication)
+RTSP_URL="rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0"
 
 # Test basic connectivity
 echo "1. Testing RTSP connectivity..."
