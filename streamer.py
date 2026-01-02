@@ -200,11 +200,11 @@ class Streamer:
                             except Exception as e:
                                 self.logger.error(f"Failed to move chunk: {e}")
                     else:
-                        # Delete old chunks when no motion
-                        if chunk_age > 30:  # Keep 30s buffer
+                        # Delete chunks immediately when no motion (only keep very recent buffer)
+                        if chunk_age > 10:  # Only keep 10s buffer for motion detection delay
                             try:
                                 chunk.unlink()
-                                self.logger.debug(f"Deleted old chunk: {chunk.name}")
+                                self.logger.debug(f"✗ Deleted no-motion chunk: {chunk.name}")
                             except Exception as e:
                                 self.logger.error(f"Failed to delete chunk: {e}")
                 
