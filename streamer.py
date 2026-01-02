@@ -156,101 +156,54 @@ class Streamer:
         self.logger.info("Motion detection stopped")
 
     def _pipeline_manager_loop(self):
-        """Start/stop hardware pipeline based on motion detection - matches old behavior"""
+        """Start/stop hardware pipeline based on motion detection - SAME AS OLD VERSION"""
         self.logger.info("Starting pipeline manager (motion-triggered)")
         
         pipeline_running = False
-        last_chunk_time = 0
-        chunk_duration = int(self.config.get('chunk_duration', 5))
-        
-        hw_chunk_dir = Path('tmp/hw_chunks') / self.stream_id
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
+        processed_chunks = set()  # Track which chunks we've already queued
         
         while self.running:
             try:
-                current_time = time.time()
+                # Check config for chunking enabled (SAME AS OLD)
+                chunking_enabled = self.config.get('chunking_enabled', False)
+                if not chunking_enabled:
+                    time.sleep(1)
+                    continue
                 
-                # OLD BEHAVIOR: Wait for motion, just like the old version
+                # Wait for motion (SAME AS OLD)
                 if not self.motion_active:
                     # Stop pipeline if motion ended
                     if pipeline_running:
-                        self.logger.info("⏹ Motion ended. Stopping pipeline and saving final chunks...")
-                        
-                        # Wait a moment for final chunk to complete
-                        time.sleep(2)
-                        
-                        # Save all remaining chunks
-                        if hw_chunk_dir.exists():
-                            chunks = list(hw_chunk_dir.glob('*.mp4'))
-                            if chunks:
-                                self.logger.info(f"Saving {len(chunks)} final chunks...")
-                                for chunk in chunks:
-                                    dest = output_dir / chunk.name
-                                    if not dest.exists() and chunk.stat().st_size > 1000:
-                                        try:
-                                            shutil.move(str(chunk), str(dest))
-                                            self.logger.info(f"✓ Saved final chunk: {chunk.name}")
-                                            self._queue_chunk_upload(dest)
-                                        except Exception as e:
-                                            self.logger.error(f"Failed to move final chunk: {e}")
-                        
-                        # Now stop the pipeline
+                        self.logger.info("⏹ Motion ended. Stopping pipeline...")
                         if self.hw_pipeline:
                             self.hw_pipeline.stop()
                             self.hw_pipeline = None
                         pipeline_running = False
-                    time.sleep(0.2)  # Same as old version
+                    time.sleep(0.2)  # SAME AS OLD
                     continue
                 
-                # Motion is active - ensure pipeline is running
+                # Motion is active - ensure pipeline is running (SAME AS OLD)
                 if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
                         self.logger.info("🎬 Motion detected! Starting hardware pipeline...")
                         self.hw_pipeline = HardwarePipeline(self.stream_id, self.rtsp_url, self.config)
                         self.hw_pipeline.start()
                         pipeline_running = True
-                        last_chunk_time = 0  # Reset to enable immediate logging
-                        self.logger.info(f"Chunks will be created in: {hw_chunk_dir}")
+                        self.logger.info("Hardware pipeline active - chunks saving to tmp/chunks/")
                 
-                # Process chunks while motion is active (OLD BEHAVIOR: continuous during motion)
+                # Queue new chunks for upload (SAME AS OLD: upload after creation)
                 if pipeline_running:
-                    if hw_chunk_dir.exists():
-                        chunks = sorted(hw_chunk_dir.glob('*.mp4'), key=lambda p: p.stat().st_mtime)
-                        
-                        # Always log when chunks are found
-                        if chunks:
-                            self.logger.info(f"📹 Found {len(chunks)} chunks in {hw_chunk_dir}")
-                        
-                        for chunk in chunks:
-                            chunk_age = current_time - chunk.stat().st_mtime
-                            chunk_size = chunk.stat().st_size
-                            
-                            self.logger.info(f"Processing {chunk.name}: age={chunk_age:.1f}s, size={chunk_size} bytes")
-                            
-                            # Move chunks immediately if they have data
-                            # GStreamer's splitmuxsink creates a new file when starting next chunk,
-                            # so if a file exists and has data, previous one is complete
-                            if chunk_size > 1000:
-                                dest = output_dir / chunk.name
-                                if not dest.exists():
-                                    try:
-                                        # Try to move - if file is still being written, this will fail gracefully
-                                        shutil.move(str(chunk), str(dest))
-                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes)")
-                                        
-                                        # Queue for upload (same as old version)
-                                        self._queue_chunk_upload(dest)
-                                    except (OSError, PermissionError) as e:
-                                        # File still being written, skip for now
-                                        self.logger.debug(f"File {chunk.name} still being written, will retry")
-                                    except Exception as e:
-                                        self.logger.error(f"Failed to move chunk {chunk.name}: {e}")
-                    else:
-                        # Log if chunk directory doesn't exist yet
-                        self.logger.warning(f"⚠ Pipeline running but directory missing: {hw_chunk_dir}")
+                    chunks = list(output_dir.glob(f'{self.stream_id}_*.mp4'))
+                    for chunk in chunks:
+                        if chunk.name not in processed_chunks:
+                            # Queue for upload
+                            processed_chunks.add(chunk.name)
+                            self._queue_chunk_upload(chunk)
+                            self.logger.info(f"Chunk saved: {chunk}")
                 
-                time.sleep(0.5)  # Check frequently like old version
+                time.sleep(0.5)
                 
             except Exception as e:
                 self.logger.error(f"Pipeline manager error: {e}")

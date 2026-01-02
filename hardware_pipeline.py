@@ -48,7 +48,8 @@ class HardwarePipeline:
     
     def _run_pipeline(self):
         """Run the GStreamer pipeline process with auto-reconnect"""
-        output_dir = Path('tmp/hw_chunks') / self.stream_id
+        # Save directly to tmp/chunks like old version (no intermediate hw_chunks)
+        output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
         
         bitrate = int(self.config.get('chunk_bitrate', 2000000))
