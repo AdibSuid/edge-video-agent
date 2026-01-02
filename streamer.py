@@ -199,21 +199,23 @@ class Streamer:
                 self.logger.warning("Hardware encoding only supported on Jetson, using software fallback")
                 return False
 
-            # Build GStreamer pipeline for hardware encoding (community standard)
-            # Uses nvv4l2h264enc which works on both JetPack 4.x and 5.x
+            # Build GStreamer pipeline for hardware encoding (Jetson NVENC)
+            # This matches the working command: uses nvvidconv + NVMM memory + nvv4l2h264enc
+            # Will show NVENC activity in jtop
             gst_cmd = [
                 'gst-launch-1.0',
                 '-e',  # Send EOS on interrupt
                 'fdsrc', '!',
                 f'video/x-raw,format=BGR,width={w},height={h},framerate={fps}/1', '!',
                 'videoconvert', '!',
-                'video/x-raw,format=I420', '!',
-                'nvv4l2h264enc',
-                'maxperf-enable=true',        # Enable maximum performance mode (lowest latency)
-                'bitrate=2000000',             # 2 Mbps target bitrate
+                'nvvidconv', '!',  # NVIDIA video converter - prepares for hardware encoder
+                'video/x-raw(memory:NVMM),format=I420', '!',  # NVMM memory = GPU memory
+                'nvv4l2h264enc',  # Hardware encoder - shows NVENC activity in jtop
+                'maxperf-enable=true',        # Enable maximum performance mode
+                'bitrate=4000000',             # 4 Mbps (higher quality for motion events)
                 'preset-level=1',              # 0=Slow, 1=Medium, 2=Fast, 3=UltraFast
                 'insert-sps-pps=true',         # Insert SPS/PPS at every IDR frame
-                'idrinterval=30', '!',         # IDR frame interval (keyframe every 30 frames)
+                'idrinterval=30', '!',         # Keyframe every 30 frames (~1 second at 30fps)
                 'h264parse', '!',
                 'qtmux', '!',
                 f'filesink location={out_path}'
@@ -732,14 +734,18 @@ class Streamer:
                 self.logger.warning("Hardware decode only supported on Jetson, falling back")
                 return False
 
-            # GStreamer pipeline for RTSP hardware decoding on Jetson Orin
+            # GStreamer pipeline for RTSP hardware decoding on Jetson
             # This uses NVIDIA's hardware decoder (NVDEC) via nvv4l2decoder
+            # protocols=tcp is crucial for reliable RTSP streaming (matches VLC behavior)
             gst_pipeline = (
-                f"rtspsrc location={self.rtsp_url} latency=0 ! "
+                f"rtspsrc location={self.rtsp_url} protocols=tcp latency=200 ! "
                 "rtph264depay ! h264parse ! "
-                "nvv4l2decoder ! nvvidconv ! "
-                "video/x-raw,format=BGRx ! videoconvert ! "
-                "video/x-raw,format=BGR ! appsink"
+                "nvv4l2decoder ! "  # Hardware decoder - shows NVDEC activity in jtop
+                "nvvidconv ! "
+                "video/x-raw,format=BGRx ! "
+                "videoconvert ! "
+                "video/x-raw,format=BGR ! "
+                "appsink drop=1"  # Drop old frames for low latency
             )
 
             self.logger.info("Starting hardware-accelerated decode pipeline with GStreamer")
