@@ -354,8 +354,15 @@ def main():
     
     if len(sys.argv) > 1:
         rtsp_url = sys.argv[1]
+        print("Note: If URL contains & or ?, make sure to quote it:")
+        print("  python diagnose_decoder.py 'rtsp://user:pass@ip:554/path?channel=1&subtype=0'")
     
-    print(f"Testing with RTSP URL: {rtsp_url}")
+    print(f"\nTesting with RTSP URL: {rtsp_url}")
+    
+    # Show URL validation
+    if '&' in rtsp_url and '?' in rtsp_url:
+        params = rtsp_url.split('?')[1]
+        print(f"✓ URL parameters: {params}")
     
     # Run diagnostics
     plugin_results = check_gstreamer_plugins()

@@ -44,8 +44,11 @@ def test_pipeline(cmd, name, timeout=15):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python troubleshoot_rtsp_decoder.py <RTSP_URL>")
+        print("Usage: python troubleshoot_rtsp_decoder.py '<RTSP_URL>'")
+        print("\nIMPORTANT: Quote the URL if it contains special characters like & or ?")
         print("\nExample:")
+        print("  python troubleshoot_rtsp_decoder.py 'rtsp://admin:pass@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0'")
+        print("\nOr:")
         print("  python troubleshoot_rtsp_decoder.py rtsp://admin:pass@192.168.0.130:554/stream")
         sys.exit(1)
     
@@ -58,6 +61,20 @@ def main():
 """)
     
     print(f"RTSP URL: {rtsp_url}")
+    
+    # Validate URL
+    if not rtsp_url.startswith('rtsp://'):
+        print("\n⚠ WARNING: URL does not start with 'rtsp://'")
+        print("   Make sure you quoted the URL properly if it contains & or ?")
+        print("   Example: 'rtsp://admin:pass@ip:554/path?channel=1&subtype=0'")
+    
+    # Show URL components for debugging
+    if '&' in rtsp_url:
+        print(f"✓ URL contains query parameters with & (properly handled)")
+        params = rtsp_url.split('?')[1] if '?' in rtsp_url else ''
+        if params:
+            print(f"  Parameters: {params}")
+    
     print("Testing 100 frames (~3-4 seconds of video)")
     
     results = {}
