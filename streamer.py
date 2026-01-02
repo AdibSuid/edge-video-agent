@@ -228,24 +228,24 @@ class Streamer:
                             
                             self.logger.info(f"Processing {chunk.name}: age={chunk_age:.1f}s, size={chunk_size} bytes")
                             
-                            # Move chunks that are complete:
-                            # 1. At least 1 second old (ensure file is closed by GStreamer)
-                            # 2. Has some data (not empty)
-                            if chunk_age > 1 and chunk_size > 1000:
+                            # Move chunks immediately if they have data
+                            # GStreamer's splitmuxsink creates a new file when starting next chunk,
+                            # so if a file exists and has data, previous one is complete
+                            if chunk_size > 1000:
                                 dest = output_dir / chunk.name
                                 if not dest.exists():
                                     try:
+                                        # Try to move - if file is still being written, this will fail gracefully
                                         shutil.move(str(chunk), str(dest))
-                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes) to {dest}")
+                                        self.logger.info(f"✓ Saved motion chunk: {chunk.name} ({chunk_size} bytes)")
                                         
                                         # Queue for upload (same as old version)
                                         self._queue_chunk_upload(dest)
+                                    except (OSError, PermissionError) as e:
+                                        # File still being written, skip for now
+                                        self.logger.debug(f"File {chunk.name} still being written, will retry")
                                     except Exception as e:
                                         self.logger.error(f"Failed to move chunk {chunk.name}: {e}")
-                                else:
-                                    self.logger.warning(f"Destination already exists: {dest}")
-                            else:
-                                self.logger.debug(f"Waiting for chunk to complete: age={chunk_age:.1f}s, size={chunk_size}")
                     else:
                         # Log if chunk directory doesn't exist yet
                         self.logger.warning(f"⚠ Pipeline running but directory missing: {hw_chunk_dir}")
