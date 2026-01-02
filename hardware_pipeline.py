@@ -130,7 +130,7 @@ class HardwarePipeline:
         """Stop the pipeline gracefully"""
         self.logger.info("Stopping hardware pipeline...")
         self.running = False
-        
+
         if self.process:
             try:
                 # Send SIGINT to process group (graceful shutdown)
@@ -142,5 +142,13 @@ class HardwarePipeline:
                 self.process.wait()
             except Exception as e:
                 self.logger.error(f"Error stopping pipeline: {e}")
-        
+
         self.logger.info("✓ Hardware pipeline stopped")
+
+    def cleanup_logger(self):
+        """Close all logger handlers to release file locks"""
+        if self.logger:
+            handlers = self.logger.handlers[:]
+            for handler in handlers:
+                handler.close()
+                self.logger.removeHandler(handler)

@@ -300,20 +300,32 @@ class Streamer:
         """Stop the streamer"""
         self.logger.info("Stopping streamer...")
         self.running = False
-        
+
         # Stop hardware pipeline
         if self.hw_pipeline:
             self.hw_pipeline.stop()
-        
+
         time.sleep(1)
-        
+
         try:
             if self in self._instances:
                 self._instances.remove(self)
         except:
             pass
-        
+
         self.logger.info("✓ Streamer stopped")
+
+    def cleanup_logger(self):
+        """Close all logger handlers to release file locks"""
+        if self.logger:
+            handlers = self.logger.handlers[:]
+            for handler in handlers:
+                handler.close()
+                self.logger.removeHandler(handler)
+
+        # Also cleanup hardware pipeline logger
+        if self.hw_pipeline and hasattr(self.hw_pipeline, 'cleanup_logger'):
+            self.hw_pipeline.cleanup_logger()
 
     @classmethod
     def set_low_quality(cls, enabled: bool):

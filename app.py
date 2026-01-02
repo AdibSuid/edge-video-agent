@@ -702,9 +702,11 @@ def api_change_camera_id():
         if old_id in streamers:
             print(f"Stopping streamer {old_id} for camera ID change...")
             streamers[old_id].stop()
+            # Close all logger file handles to release file locks
+            streamers[old_id].cleanup_logger()
             del streamers[old_id]
             was_running = True
-            time.sleep(1)  # Give it time to clean up
+            time.sleep(2)  # Give it time to clean up and release file handles
 
         # Rename all related files
         log_dir = Path('logs')
@@ -714,32 +716,44 @@ def api_change_camera_id():
         old_events = log_dir / f'events_{old_id}.json'
         new_events = log_dir / f'events_{new_id}.json'
         if old_events.exists():
-            old_events.rename(new_events)
-            print(f"Renamed {old_events} -> {new_events}")
+            try:
+                old_events.rename(new_events)
+                print(f"Renamed {old_events} -> {new_events}")
+            except Exception as e:
+                print(f"Warning: Could not rename event log: {e}")
 
         # Rename stream log file
         old_log = log_dir / f'{old_id}.log'
         new_log = log_dir / f'{new_id}.log'
         if old_log.exists():
-            old_log.rename(new_log)
-            print(f"Renamed {old_log} -> {new_log}")
+            try:
+                old_log.rename(new_log)
+                print(f"Renamed {old_log} -> {new_log}")
+            except Exception as e:
+                print(f"Warning: Could not rename stream log: {e}")
 
         # Rename hardware pipeline log file
         old_hw_log = log_dir / f'hw_pipeline_{old_id}.log'
         new_hw_log = log_dir / f'hw_pipeline_{new_id}.log'
         if old_hw_log.exists():
-            old_hw_log.rename(new_hw_log)
-            print(f"Renamed {old_hw_log} -> {new_hw_log}")
+            try:
+                old_hw_log.rename(new_hw_log)
+                print(f"Renamed {old_hw_log} -> {new_hw_log}")
+            except Exception as e:
+                print(f"Warning: Could not rename hardware pipeline log: {e}")
 
         # Rename chunk files
         if chunks_dir.exists():
             for chunk_file in chunks_dir.glob(f'{old_id}_*.mp4'):
-                # Extract timestamp from filename
-                timestamp_part = chunk_file.name[len(old_id)+1:]  # Everything after "old_id_"
-                new_chunk_name = f'{new_id}_{timestamp_part}'
-                new_chunk_path = chunks_dir / new_chunk_name
-                chunk_file.rename(new_chunk_path)
-                print(f"Renamed {chunk_file} -> {new_chunk_path}")
+                try:
+                    # Extract timestamp from filename
+                    timestamp_part = chunk_file.name[len(old_id)+1:]  # Everything after "old_id_"
+                    new_chunk_name = f'{new_id}_{timestamp_part}'
+                    new_chunk_path = chunks_dir / new_chunk_name
+                    chunk_file.rename(new_chunk_path)
+                    print(f"Renamed {chunk_file} -> {new_chunk_path}")
+                except Exception as e:
+                    print(f"Warning: Could not rename chunk {chunk_file}: {e}")
 
         # Update the config
         stream_config['id'] = new_id
@@ -752,9 +766,16 @@ def api_change_camera_id():
             start_stream(stream_config)
 
         return jsonify({'success': True})
+    except PermissionError as e:
+        error_msg = f"Permission denied: {e}. Check file permissions in logs/ and tmp/chunks/ directories."
+        print(f"Error changing camera ID: {error_msg}")
+        return jsonify({'success': False, 'error': error_msg}), 500
     except Exception as e:
-        print(f"Error changing camera ID: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        print(f"Error changing camera ID: {error_msg}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': error_msg}), 500
 
 @app.route('/api/get_local_subnet', methods=['GET'])
 def api_get_local_subnet():
