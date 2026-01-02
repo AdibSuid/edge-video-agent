@@ -722,60 +722,46 @@ class Streamer:
             return False
 
     def _capture_loop_hw_decode(self):
-        """Hardware-accelerated RTSP capture using GStreamer pipeline on Jetson."""
+        """Hardware-accelerated RTSP capture using GStreamer for Jetson TX2 NX."""
         import cv2
         import numpy as np
 
         try:
-            # Check if we're on Jetson
-            is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
-            
-            if not is_jetson:
-                self.logger.warning("Hardware decode only supported on Jetson, falling back")
-                return False
-
-            # GStreamer pipeline for RTSP hardware decoding on Jetson
-            # This uses NVIDIA's hardware decoder (NVDEC) via nvv4l2decoder
-            # protocols=tcp is crucial for reliable RTSP streaming (matches VLC behavior)
-            gst_pipeline = (
-                f"rtspsrc location={self.rtsp_url} protocols=tcp latency=200 ! "
+            # GStreamer pipeline optimized for Jetson TX2 NX
+            # Uses rtspsrc -> rtph264depay -> h264parse -> avdec_h264 (software) or omxh264dec (hardware)
+            pipeline = (
+                f"rtspsrc location={self.rtsp_url} latency=200 protocols=tcp ! "
                 "rtph264depay ! h264parse ! "
-                "nvv4l2decoder ! "  # Hardware decoder - shows NVDEC activity in jtop
-                "nvvidconv ! "
-                "video/x-raw,format=BGRx ! "
+                "avdec_h264 ! "  # Software decoder (more stable than omx on TX2 NX)
                 "videoconvert ! "
                 "video/x-raw,format=BGR ! "
-                "appsink drop=1"  # Drop old frames for low latency
+                "appsink drop=1 max-buffers=2"
             )
 
-            self.logger.info("Starting hardware-accelerated decode pipeline with GStreamer")
-            
-            # Set OpenCV to use GStreamer backend
-            cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-            
+            self.logger.info(f"Starting GStreamer pipeline: {pipeline[:100]}...")
+            cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+
             if not cap.isOpened():
-                self.logger.error("Failed to open GStreamer pipeline for hardware decode")
+                self.logger.error("Failed to open GStreamer pipeline")
                 return False
 
-            # Configure buffer size for low latency
-            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-            self.logger.info("GStreamer hardware decode pipeline opened successfully")
+            self.logger.info("GStreamer pipeline opened successfully")
+            
             frame_count = 0
             last_frame_time = time.time()
             target_interval = 0.1  # 10 FPS
 
-            success = True
             while self.running:
                 ret, frame = cap.read()
+                
                 if not ret:
-                    self.logger.warning("Failed to read frame from hardware decode pipeline")
-                    success = False
-                    break
+                    self.logger.warning("Failed to read frame from GStreamer pipeline")
+                    time.sleep(0.5)
+                    continue
 
                 frame_count += 1
-                if frame_count % 100 == 0:  # Log every 100 frames
-                    self.logger.info(f"Captured {frame_count} frames (HW decode)")
+                if frame_count % 100 == 0:
+                    self.logger.info(f"Captured {frame_count} frames (GStreamer)")
 
                 try:
                     if not self.frame_queue.full():
@@ -783,7 +769,7 @@ class Streamer:
                 except Exception:
                     pass
 
-                # Dynamic sleep to maintain target FPS
+                # Dynamic sleep
                 elapsed = time.time() - last_frame_time
                 sleep_time = max(0, target_interval - elapsed)
                 if sleep_time > 0:
@@ -791,11 +777,11 @@ class Streamer:
                 last_frame_time = time.time()
 
             cap.release()
-            self.logger.info("Hardware decode capture loop ended")
-            return success
+            self.logger.info("GStreamer capture loop ended")
+            return True
 
         except Exception as e:
-            self.logger.error(f"Hardware decode error: {e}")
+            self.logger.error(f"GStreamer pipeline error: {e}")
             return False
 
     def _motion_loop(self):
