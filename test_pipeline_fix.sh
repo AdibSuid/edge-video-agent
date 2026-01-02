@@ -8,15 +8,17 @@ echo ""
 RTSP_URL="rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0"
 
 # Test basic connectivity
-echo "1. Testing RTSP connectivity..."
-gst-launch-1.0 -v \
+echo "1. Testing RTSP connectivity (5 seconds)..."
+timeout 5 gst-launch-1.0 -v \
   rtspsrc location="$RTSP_URL" latency=200 protocols=tcp timeout=5000000 ! \
   fakesink \
   2>&1 | head -20
 
 echo ""
-echo "2. Testing hardware decode..."
-gst-launch-1.0 -v \
+echo "✓ Step 1 complete"
+echo ""
+echo "2. Testing hardware decode (5 seconds)..."
+timeout 5 gst-launch-1.0 -v \
   rtspsrc location="$RTSP_URL" latency=200 protocols=tcp ! \
   queue max-size-buffers=2 leaky=downstream ! \
   rtph264depay ! \
@@ -26,10 +28,12 @@ gst-launch-1.0 -v \
   2>&1 | head -30
 
 echo ""
-echo "3. Testing full pipeline (Ctrl+C to stop after a few seconds)..."
+echo "✓ Step 2 complete"
+echo ""
+echo "3. Testing full pipeline (10 seconds - creating video chunks)..."
 mkdir -p tmp/test_chunks
 
-gst-launch-1.0 -e \
+timeout 10 gst-launch-1.0 -e \
   rtspsrc location="$RTSP_URL" latency=200 protocols=tcp retry=3 timeout=10000000 ! \
   queue max-size-buffers=2 leaky=downstream ! \
   rtph264depay ! \
@@ -43,3 +47,8 @@ gst-launch-1.0 -e \
 
 echo ""
 echo "✓ Test complete! Check tmp/test_chunks/ for output files."
+echo ""
+ls -lh tmp/test_chunks/ 2>/dev/null || echo "No files created yet"
+echo ""
+echo "If you see video files above, the pipeline is working correctly!"
+echo "Now you can run: python app.py"
