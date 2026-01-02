@@ -21,7 +21,7 @@ streams:
   id: Pantry
   name: Camera 192.168.0.14
   rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
-  streaming_enabled: false
+  streaming_enabled: true
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
@@ -29,7 +29,7 @@ streams:
   id: OfficeWindow
   name: Camera 192.168.0.130
   rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
-  streaming_enabled: false
+  streaming_enabled: true
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
@@ -37,6 +37,6 @@ streams:
   id: OfficeEntrance
   name: Camera 192.168.0.198
   rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0
-  streaming_enabled: false
+  streaming_enabled: true
 use_hardware_decode: true
 use_hardware_encode: true
