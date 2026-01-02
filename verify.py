@@ -7,11 +7,11 @@ print("=" * 70)
 
 # Version check
 version = cv2.__version__
-print(f"\n1. Version: {version}")
+print("\n1. Version: " + version)
 
 if not version.startswith('4.5.1'):
-    print(f"   ✗ Wrong version! Expected 4.5.1, got {version}")
-    print(f"   ✗ Location: {cv2.__file__}")
+    print("   X Wrong version! Expected 4.5.1, got " + version)
+    print("   X Location: " + cv2.__file__)
     print("\n   Run: source ~/.bashrc")
     sys.exit(1)
 
@@ -22,25 +22,25 @@ print("\n2. GStreamer:")
 gst_enabled = False
 for line in build_info.split('\n'):
     if 'GStreamer:' in line:
-        print(f"   {line.strip()}")
+        print("   " + line.strip())
         if 'YES' in line:
             gst_enabled = True
             print("   ✓ ENABLED")
         else:
-            print("   ✗ DISABLED")
+            print("   X DISABLED")
         break
 
 if not gst_enabled:
-    print("   ✗ GStreamer NOT found - rebuild needed!")
+    print("   X GStreamer NOT found - rebuild needed!")
     sys.exit(1)
 
 # CUDA check
 print("\n3. CUDA:")
 try:
     count = cv2.cuda.getCudaEnabledDeviceCount()
-    print(f"   ✓ CUDA devices: {count}")
+    print("   ✓ CUDA devices: " + str(count))
 except Exception as e:
-    print(f"   ✗ CUDA error: {e}")
+    print("   X CUDA error: " + str(e))
 
 # Pipeline test
 print("\n4. GStreamer Pipeline Test:")
@@ -50,12 +50,12 @@ cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
 if cap.isOpened():
     ret, frame = cap.read()
     if ret:
-        print(f"   ✓ Pipeline works! Frame: {frame.shape}")
+        print("   ✓ Pipeline works! Frame: " + str(frame.shape))
     else:
-        print("   ✗ Failed to read frame")
+        print("   X Failed to read frame")
     cap.release()
 else:
-    print("   ✗ Pipeline failed to open")
+    print("   X Pipeline failed to open")
 
 print("\n" + "=" * 70)
 print("✓✓ All checks passed!")
