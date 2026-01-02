@@ -55,23 +55,37 @@ class HardwarePipeline:
         chunk_duration_ns = int(self.config.get('chunk_duration', 5)) * 1000000000
         
         # Pure GStreamer pipeline with error handling
+        # FIXED: Properties must be separate list items, not combined
         pipeline = [
             'gst-launch-1.0', '-e',
-            'rtspsrc', f'location={self.rtsp_url}', 
-            'latency=200', 'protocols=tcp', 'retry=3', 'timeout=10000000',  # Add retry and timeout
-            '!', 'queue', 'max-size-buffers=2', 'leaky=downstream',
+            'rtspsrc', 
+            f'location={self.rtsp_url}', 
+            'latency=200', 
+            'protocols=tcp', 
+            'retry=3', 
+            'timeout=10000000',
+            '!', 'queue', 
+            'max-size-buffers=2', 
+            'leaky=downstream',
             '!', 'rtph264depay',
             '!', 'h264parse',
-            '!', 'nvv4l2decoder', 'enable-max-performance=1',
+            '!', 'nvv4l2decoder', 
+            'enable-max-performance=1',
             '!', 'nvvidconv',
-            '!', 'video/x-raw(memory:NVMM)',
-            '!', 'nvv4l2h264enc', f'bitrate={bitrate}', 'preset-level=1', 'insert-sps-pps=true',
+            '!', 'video/x-raw(memory:NVMM),format=I420',  # Combine caps into single string
+            '!', 'nvv4l2h264enc', 
+            f'bitrate={bitrate}', 
+            'preset-level=1', 
+            'insert-sps-pps=true',
             '!', 'h264parse',
-            '!', 'splitmuxsink', f'location={output_dir}/{self.stream_id}_%05d.mp4', 
-            f'max-size-time={chunk_duration_ns}', 'max-files=100'
+            '!', 'splitmuxsink', 
+            f'location={output_dir}/{self.stream_id}_%05d.mp4', 
+            f'max-size-time={chunk_duration_ns}', 
+            'max-files=100'
         ]
         
         self.logger.info(f"Starting pipeline with auto-reconnect...")
+        self.logger.info(f"Full command: {' '.join(pipeline)}")
         
         while self.running:
             try:
@@ -89,12 +103,21 @@ class HardwarePipeline:
                 for line in self.process.stderr:
                     line_str = line.decode('utf-8', errors='ignore').strip()
                     
-                    if 'ERROR' in line_str:
-                        error_count += 1
-                        self.logger.error(f"GStreamer: {line_str}")
-                        
-                        # Too many errors, restart
-                        if error_count > 5:
+                    # Log all lines to help debug not-linked errors
+                    if line_str:
+                        if 'not-linked' in line_str.lower():
+                            self.logger.error(f"NOT-LINKED ERROR: {line_str}")
+                            error_count += 10  # Force restart on not-linked
+                        elif 'ERROR' in line_str:
+                            error_count += 1
+                            self.logger.error(f"GStreamer: {line_str}")
+                        elif 'WARNING' in line_str:
+                            self.logger.warning(f"GStreamer: {line_str}")
+                        elif 'Setting pipeline to PAUSED' in line_str or 'Setting pipeline to PLAYING' in line_str:
+                            self.logger.info(f"GStreamer: {line_str}")
+                    
+                    # Too many errors, restart
+                    if error_count > 5:
                             self.logger.warning("Too many errors, restarting pipeline...")
                             break
                     elif 'WARNING' in line_str:
