@@ -149,9 +149,14 @@
                                 <label class="form-check-label" for="chunkingEnabled-{{ stream.id }}">Chunking Enabled</label>
                             </div>
                             <div class="mt-2">
-                                <label for="chunkDuration-{{ stream.id }}" class="form-label small">Chunk Duration (5-15s):</label>
-                                <input type="number" class="form-control form-control-sm" min="5" max="15" id="chunkDuration-{{ stream.id }}" value="{{ stream.chunk_duration|default(5) }}"
-                                    onchange="updateStreamSetting('{{ stream.id }}', 'chunk_duration', this.value)">
+                                <label for="chunkDuration-{{ stream.id }}" class="form-label small">
+                                    Chunk Duration: <span id="chunkValue-{{ stream.id }}">{{ stream.chunk_duration|default(5) }}</span>s
+                                </label>
+                                <input type="range" class="form-range" min="5" max="15" step="1"
+                                    id="chunkDuration-{{ stream.id }}" 
+                                    value="{{ stream.chunk_duration|default(5) }}"
+                                    oninput="document.getElementById('chunkValue-{{ stream.id }}').textContent=this.value"
+                                    onchange="updateStreamSetting('{{ stream.id }}', 'chunk_duration', parseInt(this.value))">
                             </div>
                             <div class="mt-2">
                                 <label for="chunkFps-{{ stream.id }}" class="form-label small">Chunk FPS (1-4):</label>
@@ -170,6 +175,7 @@
                                     oninput="document.getElementById('sensValue-{{ stream.id }}').textContent=this.value"
                                     onchange="updateStreamSetting('{{ stream.id }}', 'motion_sensitivity', parseInt(this.value))">
                             </div>
+                            <!-- Temporarily disabled
                             <div class="mt-2">
                                 <label for="retrigger-{{ stream.id }}" class="form-label small">
                                     Retrigger: <span id="retrigValue-{{ stream.id }}">{{ stream.retrigger_time|default(5) }}</span>s
@@ -180,16 +186,7 @@
                                     oninput="document.getElementById('retrigValue-{{ stream.id }}').textContent=this.value"
                                     onchange="updateStreamSetting('{{ stream.id }}', 'retrigger_time', parseInt(this.value))">
                             </div>
-                            <div class="mt-2">
-                                <label for="maxClip-{{ stream.id }}" class="form-label small">
-                                    Max Clip: <span id="maxClipValue-{{ stream.id }}">{{ stream.max_clip_length|default(300) }}</span>s
-                                </label>
-                                <input type="range" class="form-range" min="30" max="600" step="30"
-                                    id="maxClip-{{ stream.id }}" 
-                                    value="{{ stream.max_clip_length|default(300) }}"
-                                    oninput="document.getElementById('maxClipValue-{{ stream.id }}').textContent=this.value"
-                                    onchange="updateStreamSetting('{{ stream.id }}', 'max_clip_length', parseInt(this.value))">
-                            </div>
+                            -->
                         </div>
                     </div>
                 </div>
@@ -217,7 +214,7 @@ function updateStreamSetting(streamId, key, value) {
             streams: window.streams.map(s => {
                 if (s.id === streamId) {
                     // Handle different types
-                    if (['chunk_duration', 'chunk_fps', 'motion_sensitivity', 'retrigger_time', 'max_clip_length', 'pre_record_buffer'].includes(key)) {
+                    if (['chunk_duration', 'chunk_fps', 'motion_sensitivity', 'retrigger_time', 'pre_record_buffer'].includes(key)) {
                         s[key] = parseInt(value);
                     } else {
                         s[key] = value;

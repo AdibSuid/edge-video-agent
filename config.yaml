@@ -19,7 +19,6 @@ motion_zones: []
 # Tapway-style Recording Features
 retrigger_time: 5          # Seconds to wait before starting new clip after motion ends
 pre_record_buffer: 0       # Seconds to record before motion (0-5, requires buffering)
-max_clip_length: 300       # Maximum clip duration in seconds (5 minutes default)
 zone_mode: "all"           # "all" = apply zones to all cameras, "individual" = per-camera zones
 streams:
 - chunk_duration: 5
@@ -34,7 +33,6 @@ streams:
   motion_sensitivity: 100      # Override global sensitivity (0-255)
   motion_zones: []             # Per-camera zones (if zone_mode is "individual")
   retrigger_time: 5           # Per-camera retrigger time
-  max_clip_length: 300        # Per-camera max clip length
   pre_record_buffer: 0        # Per-camera pre-record buffer
 - chunk_duration: 5
   chunk_fps: 2
@@ -47,7 +45,6 @@ streams:
   motion_sensitivity: 100
   motion_zones: []
   retrigger_time: 5
-  max_clip_length: 300
   pre_record_buffer: 0
 - chunk_duration: 5
   chunk_fps: 2
@@ -60,7 +57,6 @@ streams:
   motion_sensitivity: 100
   motion_zones: []
   retrigger_time: 5
-  max_clip_length: 300
   pre_record_buffer: 0
 use_hardware_decode: true
 use_hardware_encode: true

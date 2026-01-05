@@ -35,7 +35,6 @@ class Streamer:
         
         # Tapway-style recording parameters
         self.retrigger_time = config.get('retrigger_time', 5)
-        self.max_clip_length = config.get('max_clip_length', 300)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)
         self.motion_end_time = 0  # Track when motion ended for retrigger
         self.recording_start_time = 0  # Track recording duration
@@ -235,28 +234,6 @@ class Streamer:
                     self.logger.info("🔄 Motion retriggered! Continuing recording...")
                     self.motion_end_time = 0
                 
-                # Check max clip length enforcement
-                if pipeline_running and self.recording_start_time > 0:
-                    recording_duration = time.time() - self.recording_start_time
-                    if recording_duration >= self.max_clip_length:
-                        self.logger.info(f"⏱ Max clip length ({self.max_clip_length}s) reached. Restarting pipeline...")
-                        
-                        # Stop current pipeline
-                        if self.hw_pipeline:
-                            self.hw_pipeline.stop()
-                            self.hw_pipeline = None
-                        
-                        time.sleep(2)
-                        
-                        # Upload chunks from previous session
-                        if recording_session_start:
-                            self._upload_session_chunks(recording_session_start)
-                        
-                        # Force restart by setting pipeline_running to False
-                        pipeline_running = False
-                        recording_session_start = None
-                        self.recording_start_time = 0
-                
                 # Start pipeline for this event
                 if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
@@ -369,7 +346,6 @@ class Streamer:
         
         # Update Tapway-style recording parameters
         self.retrigger_time = config.get('retrigger_time', 5)
-        self.max_clip_length = config.get('max_clip_length', 300)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)
         
         try:

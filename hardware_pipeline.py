@@ -53,7 +53,7 @@ class HardwarePipeline:
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Get chunk duration from config (5-15 seconds)
+        # Get chunk duration from config (5-15 seconds range)
         chunk_duration = int(self.config.get('chunk_duration', 5))
         chunk_duration_ns = chunk_duration * 1000000000  # Convert to nanoseconds
         
