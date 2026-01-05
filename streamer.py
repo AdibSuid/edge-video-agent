@@ -195,21 +195,34 @@ class Streamer:
                 
                 # Wait for motion
                 if not self.motion_active:
-                    # Check if retrigger time has elapsed before stopping
                     if pipeline_running:
                         # Track when motion ended
                         if self.motion_end_time == 0:
                             self.motion_end_time = time.time()
                             chunk_duration = self.config.get('chunk_duration', 5)
-                            self.logger.info(f"Motion ended. Recording for {chunk_duration} more seconds to complete current chunk...")
+                            
+                            # Calculate how much time has elapsed since recording started
+                            recording_elapsed = time.time() - self.recording_start_time
+                            
+                            # Calculate when the next chunk boundary will occur
+                            # This ensures we stop at a chunk boundary, not in the middle
+                            time_into_current_chunk = recording_elapsed % chunk_duration
+                            time_until_next_boundary = chunk_duration - time_into_current_chunk
+                            
+                            self.logger.info(f"Motion ended. Will record for {time_until_next_boundary:.1f} more seconds to complete current chunk...")
                         
                         # Calculate time since motion ended
                         elapsed = time.time() - self.motion_end_time
                         chunk_duration = self.config.get('chunk_duration', 5)
                         
-                        # Wait for current chunk to complete to ensure uniform chunk durations
-                        if elapsed >= chunk_duration:
-                            self.logger.info("⏹ Current chunk completed. Stopping pipeline...")
+                        # Calculate time to wait until next chunk boundary
+                        recording_elapsed = self.motion_end_time - self.recording_start_time
+                        time_into_current_chunk = recording_elapsed % chunk_duration
+                        time_until_next_boundary = chunk_duration - time_into_current_chunk
+                        
+                        # Wait for current chunk to complete at the chunk boundary
+                        if elapsed >= time_until_next_boundary:
+                            self.logger.info("⏹ Chunk boundary reached. Stopping pipeline...")
                             
                             # Stop the pipeline
                             if self.hw_pipeline:
@@ -298,6 +311,7 @@ class Streamer:
             self.logger.error(f"Error uploading session chunks: {e}")
             import traceback
             traceback.print_exc()
+
     
     def _queue_chunk_upload(self, chunk_path):
         """Queue chunk for cloud upload"""
