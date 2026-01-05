@@ -63,11 +63,18 @@ class HardwarePipeline:
         
         bitrate = int(self.config.get('chunk_bitrate', 2000000))
         
-        # Calculate keyframe interval to ensure splits at exact durations
-        # For 25fps video: keyframe every second = idrinterval=25
-        # This ensures splitmuxsink can split close to the target duration
+        # Strategy: Force keyframes more frequently to enable precise splits
+        # Use a shorter GOP (Group of Pictures) to ensure keyframes align with chunk duration
+        # For 8 second chunks with 25fps: we need keyframes every 1-2 seconds max
         fps = 25  # Assume 25fps for most CCTV cameras
-        keyframe_interval = fps  # Keyframe every second for precise splits
+        
+        # Set keyframe interval to half the chunk duration to ensure at least 2 keyframes per chunk
+        # This allows splitmuxsink to split closer to the target time
+        keyframe_interval = max(fps // 2, 15)  # Minimum 15 frames (0.6s), or half-second for better splits
+        
+        # Calculate approximate max bytes per chunk (as backup split trigger)
+        # bitrate is in bits/sec, convert to bytes and multiply by duration
+        max_bytes = int((bitrate / 8) * chunk_duration * 1.1)  # 10% buffer
         
         # FIXED CHUNK DURATION MODE: Split based on chunk_duration setting
         # Uses splitmuxsink to create fixed-duration chunks
@@ -86,12 +93,15 @@ class HardwarePipeline:
             f'bitrate={bitrate}',
             'preset-level=1',
             'insert-sps-pps=true',
-            f'idrinterval={keyframe_interval}',  # Keyframe every second for precise splits
+            f'idrinterval={keyframe_interval}',  # Frequent keyframes for precise time-based splits
+            'insert-vui=true',  # Insert VUI for better timing info
             '!', 'h264parse',
+            'config-interval=1',  # Insert config (SPS/PPS) at every IDR
             '!', 'video/x-h264,stream-format=avc,alignment=au',
             '!', 'splitmuxsink',  # Split into fixed-duration chunks
             f'location={output_pattern}',
-            f'max-size-time={chunk_duration_ns}',  # Split every N seconds
+            f'max-size-time={chunk_duration_ns}',  # Primary: Split every N seconds
+            f'max-size-bytes={max_bytes}',  # Secondary: Size limit as backup
             'send-keyframe-requests=true',  # Request keyframes at split points
             'muxer-factory=qtmux',
             'muxer-properties="properties,faststart=true"',
