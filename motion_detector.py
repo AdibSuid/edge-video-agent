@@ -130,3 +130,30 @@ class MotionDetector:
                 self.blur_kernel = blur_kernel if blur_kernel % 2 == 1 else blur_kernel + 1
             if frame_skip is not None:
                 self.frame_skip = max(1, frame_skip)
+    
+    def get_zones_normalized(self):
+        """
+        Get detection zones in normalized format (0-1 range) for UI display
+        Returns: List of zones as [{"x": 0-1, "y": 0-1, "w": 0-1, "h": 0-1}, ...]
+        """
+        with self.lock:
+            # Assuming zones are stored in pixel coordinates
+            # For now, just return the zones as-is (will be normalized by UI)
+            return [{"x": z[0], "y": z[1], "w": z[2], "h": z[3]} for z in self.zones if len(z) == 4]
+    
+    def set_zones_normalized(self, normalized_zones, frame_width, frame_height):
+        """
+        Set detection zones from normalized coordinates (0-1 range)
+        Args:
+            normalized_zones: List of {"x": 0-1, "y": 0-1, "w": 0-1, "h": 0-1}
+            frame_width: Video frame width in pixels
+            frame_height: Video frame height in pixels
+        """
+        with self.lock:
+            self.zones = []
+            for zone in normalized_zones:
+                x = int(zone['x'] * frame_width)
+                y = int(zone['y'] * frame_height)
+                w = int(zone['w'] * frame_width)
+                h = int(zone['h'] * frame_height)
+                self.zones.append([x, y, w, h])

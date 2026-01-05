@@ -2,13 +2,27 @@
 
 A lightweight edge video surveillance agent that converts local CCTV streams to secure, cloud-ready video feeds with intelligent bandwidth optimization through motion detection.
 
-## 🎯 Key Features
+## � NEW: Tapo-Style Motion Detection Features
+
+**Visual zone editor, per-camera sensitivity, retrigger time, and max clip length!**
+
+- 🎨 **Visual Zone Editor**: Draw detection zones like Tapo cameras
+- 🎚️ **Per-Camera Sensitivity**: Fine-tune motion detection (0-255 levels)
+- ⏱️ **Retrigger Time**: Smart clip continuation (1-30 seconds)
+- 📏 **Max Clip Length**: Auto-split long recordings (30s-10min)
+- 🌍 **Global/Individual Zones**: Apply zones to all or per camera
+- 🔄 **Real-time Updates**: Changes apply instantly
+
+👉 **[Quick Start Guide](TAPO_QUICKSTART.md)** | **[Full Documentation](TAPO_FEATURES.md)** | **[Visual Guide](VISUAL_GUIDE.md)**
+
+## �🎯 Key Features
 
 - **ONVIF Discovery**: Automatically find IP cameras on your network
 - **Manual RTSP Addition**: Add any RTSP-compatible camera manually
 - **Motion-Triggered Adaptive FPS**: 
   - **Idle**: 1 FPS (saves ~90% bandwidth)
   - **Motion**: 25 FPS (full quality)
+- **Tapo-Style Controls**: Visual zone drawing, sensitivity sliders, retrigger time
 - **Cloud Video Upload**: Automatic chunk upload with bearer token authentication
 - **Secure Streaming**: AES-256 encrypted SRT streaming to cloud
 - **Network Monitoring**: Real-time upload speed tracking
@@ -19,7 +33,7 @@ A lightweight edge video surveillance agent that converts local CCTV streams to 
 - **Event Logging**: Track all motion events with timeline visualization
 - **Upload Queue**: Automatic retry and queue management for cloud uploads
 - **Cross-Platform**: Works on Windows and Linux
-- **CPU-Only**: No GPU required (~15% CPU on 720p)
+- **Hardware Acceleration**: NVIDIA NVENC/NVDEC support (optional)
 
 ## 📋 Requirements
 

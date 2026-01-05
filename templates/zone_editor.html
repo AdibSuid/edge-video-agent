@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Detection Zone Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { padding: 20px; background: #f5f5f5; }
+        .canvas-container { position: relative; display: inline-block; }
+        #videoCanvas { 
+            border: 2px solid #333; 
+            background: #000;
+            cursor: crosshair;
+            max-width: 100%;
+            height: auto;
+        }
+        .zone-box {
+            position: absolute;
+            border: 2px solid #00ff00;
+            background: rgba(0, 255, 0, 0.2);
+            pointer-events: none;
+        }
+        .zone-label {
+            position: absolute;
+            background: #00ff00;
+            color: #000;
+            padding: 2px 6px;
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+        }
+        .sensitivity-slider {
+            width: 100%;
+        }
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row mb-4">
+            <div class="col">
+                <h1><i class="fas fa-draw-polygon"></i> Motion Detection Zone Editor</h1>
+                <p class="text-muted">Configure detection zones and sensitivity like Tapo cameras</p>
+                <a href="/" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5>
+                            <span id="cameraName">Camera</span> - Live Preview
+                        </h5>
+                        <small class="text-muted">Draw rectangles to define motion detection zones</small>
+                    </div>
+                    <div class="card-body text-center">
+                        <div class="canvas-container" id="canvasContainer">
+                            <canvas id="videoCanvas" width="640" height="360"></canvas>
+                            <div id="zoneOverlays"></div>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" id="captureBtn">
+                                <i class="fas fa-camera"></i> Capture Frame
+                            </button>
+                            <button class="btn btn-danger" id="clearZonesBtn">
+                                <i class="fas fa-trash"></i> Clear All Zones
+                            </button>
+                            <button class="btn btn-success" id="saveZonesBtn">
+                                <i class="fas fa-save"></i> Save Zones
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="control-panel">
+                    <h5><i class="fas fa-sliders-h"></i> Settings</h5>
+                    
+                    <!-- Camera Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Select Camera</label>
+                        <select class="form-select" id="cameraSelect">
+                            <!-- Populated by JS -->
+                        </select>
+                    </div>
+
+                    <!-- Zone Mode -->
+                    <div class="mb-3">
+                        <label class="form-label">Zone Mode</label>
+                        <select class="form-select" id="zoneMode">
+                            <option value="all">Apply to All Cameras</option>
+                            <option value="individual">Individual per Camera</option>
+                        </select>
+                        <small class="text-muted">
+                            Choose whether zones apply globally or per camera
+                        </small>
+                    </div>
+
+                    <!-- Motion Sensitivity -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Motion Sensitivity: <span id="sensitivityValue">50</span>
+                        </label>
+                        <input type="range" class="form-range sensitivity-slider" 
+                               id="sensitivitySlider" min="0" max="255" value="100">
+                        <small class="text-muted">
+                            Lower = More sensitive (0-255)
+                        </small>
+                    </div>
+
+                    <!-- Retrigger Time -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Retrigger Time: <span id="retriggerValue">5</span>s
+                        </label>
+                        <input type="range" class="form-range" 
+                               id="retriggerSlider" min="1" max="30" value="5">
+                        <small class="text-muted">
+                            Wait time before starting new clip after motion ends
+                        </small>
+                    </div>
+
+                    <!-- Max Clip Length -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Max Clip Length: <span id="maxClipValue">300</span>s
+                        </label>
+                        <input type="range" class="form-range" 
+                               id="maxClipSlider" min="30" max="600" step="30" value="300">
+                        <small class="text-muted">
+                            Maximum duration for single clip (30s - 10min)
+                        </small>
+                    </div>
+
+                    <!-- Pre-record Buffer -->
+                    <div class="mb-3">
+                        <label class="form-label">
+                            Pre-record Buffer: <span id="preRecordValue">0</span>s
+                        </label>
+                        <input type="range" class="form-range" 
+                               id="preRecordSlider" min="0" max="5" value="0">
+                        <small class="text-muted">
+                            Seconds to record before motion (0-5s) - Coming soon
+                        </small>
+                    </div>
+
+                    <!-- Active Zones List -->
+                    <div class="mb-3">
+                        <h6>Active Zones (<span id="zoneCount">0</span>)</h6>
+                        <div id="zonesList" class="list-group">
+                            <div class="list-group-item text-muted">
+                                <small>No zones defined. Draw on the canvas to add zones.</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <!-- Instructions -->
+                    <div class="alert alert-info">
+                        <strong><i class="fas fa-info-circle"></i> How to Use:</strong>
+                        <ol class="mb-0 mt-2">
+                            <li>Click "Capture Frame" to freeze the video</li>
+                            <li>Click and drag on the image to draw detection zones</li>
+                            <li>Adjust sensitivity and other settings</li>
+                            <li>Click "Save Zones" to apply changes</li>
+                        </ol>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let streams = [];
+        let currentStream = null;
+        let zones = [];
+        let isDrawing = false;
+        let startX, startY;
+        let canvas, ctx;
+        let capturedImage = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', async () => {
+            canvas = document.getElementById('videoCanvas');
+            ctx = canvas.getContext('2d');
+            
+            // Load streams
+            await loadStreams();
+            
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Load current stream settings
+            if (streams.length > 0) {
+                loadStreamSettings(streams[0].id);
+            }
+        });
+
+        async function loadStreams() {
+            const response = await fetch('/api/settings');
+            const config = await response.json();
+            streams = config.streams || [];
+            
+            const select = document.getElementById('cameraSelect');
+            select.innerHTML = '';
+            streams.forEach(stream => {
+                const option = document.createElement('option');
+                option.value = stream.id;
+                option.textContent = stream.name;
+                select.appendChild(option);
+            });
+            
+            // Set zone mode
+            document.getElementById('zoneMode').value = config.zone_mode || 'all';
+        }
+
+        function setupEventListeners() {
+            // Canvas drawing
+            canvas.addEventListener('mousedown', startDrawing);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', stopDrawing);
+            canvas.addEventListener('mouseleave', stopDrawing);
+            
+            // Buttons
+            document.getElementById('captureBtn').addEventListener('click', captureFrame);
+            document.getElementById('clearZonesBtn').addEventListener('click', clearZones);
+            document.getElementById('saveZonesBtn').addEventListener('click', saveZones);
+            
+            // Camera select
+            document.getElementById('cameraSelect').addEventListener('change', (e) => {
+                loadStreamSettings(e.target.value);
+            });
+            
+            // Sliders
+            document.getElementById('sensitivitySlider').addEventListener('input', (e) => {
+                document.getElementById('sensitivityValue').textContent = e.target.value;
+            });
+            document.getElementById('retriggerSlider').addEventListener('input', (e) => {
+                document.getElementById('retriggerValue').textContent = e.target.value;
+            });
+            document.getElementById('maxClipSlider').addEventListener('input', (e) => {
+                document.getElementById('maxClipValue').textContent = e.target.value;
+            });
+            document.getElementById('preRecordSlider').addEventListener('input', (e) => {
+                document.getElementById('preRecordValue').textContent = e.target.value;
+            });
+        }
+
+        async function captureFrame() {
+            const streamId = document.getElementById('cameraSelect').value;
+            if (!streamId) return;
+            
+            document.getElementById('captureBtn').disabled = true;
+            document.getElementById('captureBtn').innerHTML = '<i class="fas fa-spinner fa-spin"></i> Capturing...';
+            
+            try {
+                const response = await fetch(`/api/camera_snapshot/${streamId}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Load image onto canvas
+                    const img = new Image();
+                    img.onload = () => {
+                        // Resize canvas to match image
+                        canvas.width = result.width;
+                        canvas.height = result.height;
+                        
+                        // Draw image
+                        ctx.drawImage(img, 0, 0);
+                        
+                        // Store as captured image
+                        capturedImage = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                        
+                        // Redraw zones
+                        redrawCanvas();
+                    };
+                    img.src = result.image;
+                } else {
+                    alert('Failed to capture frame: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error capturing frame: ' + error.message);
+            } finally {
+                document.getElementById('captureBtn').disabled = false;
+                document.getElementById('captureBtn').innerHTML = '<i class="fas fa-camera"></i> Capture Frame';
+            }
+        }
+
+        function startDrawing(e) {
+            if (!capturedImage) {
+                alert('Please capture a frame first!');
+                return;
+            }
+            
+            isDrawing = true;
+            const rect = canvas.getBoundingClientRect();
+            startX = e.clientX - rect.left;
+            startY = e.clientY - rect.top;
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const currentX = e.clientX - rect.left;
+            const currentY = e.clientY - rect.top;
+            
+            // Redraw image and existing zones
+            if (capturedImage) {
+                ctx.putImageData(capturedImage, 0, 0);
+            }
+            drawExistingZones();
+            
+            // Draw current rectangle
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(startX, startY, currentX - startX, currentY - startY);
+        }
+
+        function stopDrawing(e) {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            const rect = canvas.getBoundingClientRect();
+            const endX = e.clientX - rect.left;
+            const endY = e.clientY - rect.top;
+            
+            const x = Math.min(startX, endX);
+            const y = Math.min(startY, endY);
+            const w = Math.abs(endX - startX);
+            const h = Math.abs(endY - startY);
+            
+            // Only add zone if it has some size
+            if (w > 10 && h > 10) {
+                zones.push({
+                    x: x / canvas.width,
+                    y: y / canvas.height,
+                    w: w / canvas.width,
+                    h: h / canvas.height
+                });
+                updateZonesList();
+                redrawCanvas();
+            }
+        }
+
+        function drawExistingZones() {
+            zones.forEach((zone, index) => {
+                const x = zone.x * canvas.width;
+                const y = zone.y * canvas.height;
+                const w = zone.w * canvas.width;
+                const h = zone.h * canvas.height;
+                
+                ctx.strokeStyle = '#00ff00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(x, y, w, h);
+                
+                // Draw label
+                ctx.fillStyle = '#00ff00';
+                ctx.font = '12px Arial';
+                ctx.fillText(`Zone ${index + 1}`, x + 5, y + 15);
+            });
+        }
+
+        function redrawCanvas() {
+            if (capturedImage) {
+                ctx.putImageData(capturedImage, 0, 0);
+            }
+            drawExistingZones();
+        }
+
+        function clearZones() {
+            if (confirm('Clear all detection zones?')) {
+                zones = [];
+                updateZonesList();
+                redrawCanvas();
+            }
+        }
+
+        function updateZonesList() {
+            const list = document.getElementById('zonesList');
+            document.getElementById('zoneCount').textContent = zones.length;
+            
+            if (zones.length === 0) {
+                list.innerHTML = '<div class="list-group-item text-muted"><small>No zones defined</small></div>';
+                return;
+            }
+            
+            list.innerHTML = zones.map((zone, i) => `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <span>Zone ${i + 1}</span>
+                    <button class="btn btn-sm btn-danger" onclick="removeZone(${i})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function removeZone(index) {
+            zones.splice(index, 1);
+            updateZonesList();
+            redrawCanvas();
+        }
+
+        async function loadStreamSettings(streamId) {
+            currentStream = streams.find(s => s.id === streamId);
+            if (!currentStream) return;
+            
+            document.getElementById('cameraName').textContent = currentStream.name;
+            
+            // Load zones
+            const zoneMode = document.getElementById('zoneMode').value;
+            if (zoneMode === 'individual') {
+                zones = currentStream.motion_zones || [];
+            } else {
+                const response = await fetch('/api/settings');
+                const config = await response.json();
+                zones = config.motion_zones || [];
+            }
+            
+            // Load other settings
+            document.getElementById('sensitivitySlider').value = currentStream.motion_sensitivity || 100;
+            document.getElementById('sensitivityValue').textContent = currentStream.motion_sensitivity || 100;
+            
+            document.getElementById('retriggerSlider').value = currentStream.retrigger_time || 5;
+            document.getElementById('retriggerValue').textContent = currentStream.retrigger_time || 5;
+            
+            document.getElementById('maxClipSlider').value = currentStream.max_clip_length || 300;
+            document.getElementById('maxClipValue').textContent = currentStream.max_clip_length || 300;
+            
+            document.getElementById('preRecordSlider').value = currentStream.pre_record_buffer || 0;
+            document.getElementById('preRecordValue').textContent = currentStream.pre_record_buffer || 0;
+            
+            updateZonesList();
+            redrawCanvas();
+        }
+
+        async function saveZones() {
+            const streamId = document.getElementById('cameraSelect').value;
+            const zoneMode = document.getElementById('zoneMode').value;
+            const sensitivity = parseInt(document.getElementById('sensitivitySlider').value);
+            const retriggerTime = parseInt(document.getElementById('retriggerSlider').value);
+            const maxClipLength = parseInt(document.getElementById('maxClipSlider').value);
+            const preRecordBuffer = parseInt(document.getElementById('preRecordSlider').value);
+            
+            try {
+                const response = await fetch('/api/zone_settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        stream_id: streamId,
+                        zone_mode: zoneMode,
+                        zones: zones,
+                        motion_sensitivity: sensitivity,
+                        retrigger_time: retriggerTime,
+                        max_clip_length: maxClipLength,
+                        pre_record_buffer: preRecordBuffer
+                    })
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    alert('Settings saved successfully!');
+                } else {
+                    alert('Error: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Failed to save settings: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

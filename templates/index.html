@@ -87,6 +87,9 @@
                     <a href="/discover" class="btn btn-primary">
                         <i class="fas fa-search"></i> Discover Cameras
                     </a>
+                    <a href="/zone_editor" class="btn btn-success">
+                        <i class="fas fa-draw-polygon"></i> Zone Editor (Tapo-style)
+                    </a>
                     <a href="/motion" class="btn btn-info">
                         <i class="fas fa-cog"></i> Motion Settings
                     </a>
@@ -146,14 +149,46 @@
                                 <label class="form-check-label" for="chunkingEnabled-{{ stream.id }}">Chunking Enabled</label>
                             </div>
                             <div class="mt-2">
-                                <label for="chunkDuration-{{ stream.id }}">Chunk Duration (5-10s):</label>
-                                <input type="number" min="5" max="10" id="chunkDuration-{{ stream.id }}" value="{{ stream.chunk_duration|default(5) }}"
+                                <label for="chunkDuration-{{ stream.id }}" class="form-label small">Chunk Duration (5-10s):</label>
+                                <input type="number" class="form-control form-control-sm" min="5" max="10" id="chunkDuration-{{ stream.id }}" value="{{ stream.chunk_duration|default(5) }}"
                                     onchange="updateStreamSetting('{{ stream.id }}', 'chunk_duration', this.value)">
                             </div>
                             <div class="mt-2">
-                                <label for="chunkFps-{{ stream.id }}">Chunk FPS (1-4):</label>
-                                <input type="number" min="1" max="4" id="chunkFps-{{ stream.id }}" value="{{ stream.chunk_fps|default(2) }}"
+                                <label for="chunkFps-{{ stream.id }}" class="form-label small">Chunk FPS (1-4):</label>
+                                <input type="number" class="form-control form-control-sm" min="1" max="4" id="chunkFps-{{ stream.id }}" value="{{ stream.chunk_fps|default(2) }}"
                                     onchange="updateStreamSetting('{{ stream.id }}', 'chunk_fps', this.value)">
+                            </div>
+                            <hr>
+                            <h6 class="text-muted">Tapo-style Recording</h6>
+                            <div class="mt-2">
+                                <label for="sensitivity-{{ stream.id }}" class="form-label small">
+                                    Sensitivity: <span id="sensValue-{{ stream.id }}">{{ stream.motion_sensitivity|default(100) }}</span>
+                                </label>
+                                <input type="range" class="form-range" min="0" max="255" 
+                                    id="sensitivity-{{ stream.id }}" 
+                                    value="{{ stream.motion_sensitivity|default(100) }}"
+                                    oninput="document.getElementById('sensValue-{{ stream.id }}').textContent=this.value"
+                                    onchange="updateStreamSetting('{{ stream.id }}', 'motion_sensitivity', parseInt(this.value))">
+                            </div>
+                            <div class="mt-2">
+                                <label for="retrigger-{{ stream.id }}" class="form-label small">
+                                    Retrigger: <span id="retrigValue-{{ stream.id }}">{{ stream.retrigger_time|default(5) }}</span>s
+                                </label>
+                                <input type="range" class="form-range" min="1" max="30" 
+                                    id="retrigger-{{ stream.id }}" 
+                                    value="{{ stream.retrigger_time|default(5) }}"
+                                    oninput="document.getElementById('retrigValue-{{ stream.id }}').textContent=this.value"
+                                    onchange="updateStreamSetting('{{ stream.id }}', 'retrigger_time', parseInt(this.value))">
+                            </div>
+                            <div class="mt-2">
+                                <label for="maxClip-{{ stream.id }}" class="form-label small">
+                                    Max Clip: <span id="maxClipValue-{{ stream.id }}">{{ stream.max_clip_length|default(300) }}</span>s
+                                </label>
+                                <input type="range" class="form-range" min="30" max="600" step="30"
+                                    id="maxClip-{{ stream.id }}" 
+                                    value="{{ stream.max_clip_length|default(300) }}"
+                                    oninput="document.getElementById('maxClipValue-{{ stream.id }}').textContent=this.value"
+                                    onchange="updateStreamSetting('{{ stream.id }}', 'max_clip_length', parseInt(this.value))">
                             </div>
                         </div>
                     </div>
@@ -181,7 +216,12 @@ function updateStreamSetting(streamId, key, value) {
         body: JSON.stringify({
             streams: window.streams.map(s => {
                 if (s.id === streamId) {
-                    s[key] = (key === 'chunk_duration' || key === 'chunk_fps') ? parseInt(value) : value;
+                    // Handle different types
+                    if (['chunk_duration', 'chunk_fps', 'motion_sensitivity', 'retrigger_time', 'max_clip_length', 'pre_record_buffer'].includes(key)) {
+                        s[key] = parseInt(value);
+                    } else {
+                        s[key] = value;
+                    }
                 }
                 return s;
             })

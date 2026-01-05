@@ -4,6 +4,8 @@ cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
 encoding_crf: 28
 encoding_preset: ultrafast
+
+# Tapo-style Motion Detection Settings (Global defaults)
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 0.25
@@ -13,6 +15,12 @@ motion_low_fps: 1
 motion_min_area: 5000
 motion_sensitivity: 100
 motion_zones: []
+
+# Tapo-style Recording Features
+retrigger_time: 5          # Seconds to wait before starting new clip after motion ends
+pre_record_buffer: 0       # Seconds to record before motion (0-5, requires buffering)
+max_clip_length: 300       # Maximum clip duration in seconds (5 minutes default)
+zone_mode: "all"           # "all" = apply zones to all cameras, "individual" = per-camera zones
 streams:
 - chunk_duration: 5
   chunk_fps: 2
@@ -22,6 +30,12 @@ streams:
   name: Camera 192.168.0.14
   rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
+  # Per-camera motion settings (Tapo-style)
+  motion_sensitivity: 100      # Override global sensitivity (0-255)
+  motion_zones: []             # Per-camera zones (if zone_mode is "individual")
+  retrigger_time: 5           # Per-camera retrigger time
+  max_clip_length: 300        # Per-camera max clip length
+  pre_record_buffer: 0        # Per-camera pre-record buffer
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
@@ -30,6 +44,11 @@ streams:
   name: Camera 192.168.0.130
   rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
+  motion_sensitivity: 100
+  motion_zones: []
+  retrigger_time: 5
+  max_clip_length: 300
+  pre_record_buffer: 0
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
@@ -38,6 +57,11 @@ streams:
   name: Camera 192.168.0.198
   rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
+  motion_sensitivity: 100
+  motion_zones: []
+  retrigger_time: 5
+  max_clip_length: 300
+  pre_record_buffer: 0
 use_hardware_decode: true
 use_hardware_encode: true
 

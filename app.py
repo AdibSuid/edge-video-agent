@@ -257,6 +257,13 @@ def motion_page():
                          cooldown=config.get('motion_cooldown', 10),
                          zones=config.get('motion_zones', []))
 
+@app.route('/zone_editor')
+def zone_editor_page():
+    """Tapo-style zone editor page"""
+    return render_template('zone_editor.html',
+                         streams=config.get('streams', []),
+                         config=config)
+
 @app.route('/motion_log')
 def motion_log_page():
     """Motion event log page"""
@@ -680,6 +687,114 @@ def api_settings():
         return jsonify({'success': True})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/zone_settings', methods=['POST'])
+def api_zone_settings():
+    """Update Tapo-style zone and recording settings"""
+    try:
+        data = request.json
+        stream_id = data.get('stream_id')
+        zone_mode = data.get('zone_mode', 'all')
+        zones = data.get('zones', [])
+        sensitivity = data.get('motion_sensitivity', 100)
+        retrigger_time = data.get('retrigger_time', 5)
+        max_clip_length = data.get('max_clip_length', 300)
+        pre_record_buffer = data.get('pre_record_buffer', 0)
+        
+        # Update zone mode globally
+        config['zone_mode'] = zone_mode
+        
+        if zone_mode == 'all':
+            # Apply zones globally
+            config['motion_zones'] = zones
+            # Update all streams with same settings
+            for stream in config.get('streams', []):
+                stream['motion_sensitivity'] = sensitivity
+                stream['retrigger_time'] = retrigger_time
+                stream['max_clip_length'] = max_clip_length
+                stream['pre_record_buffer'] = pre_record_buffer
+        else:
+            # Apply zones to individual stream
+            for stream in config.get('streams', []):
+                if stream['id'] == stream_id:
+                    stream['motion_zones'] = zones
+                    stream['motion_sensitivity'] = sensitivity
+                    stream['retrigger_time'] = retrigger_time
+                    stream['max_clip_length'] = max_clip_length
+                    stream['pre_record_buffer'] = pre_record_buffer
+                    break
+        
+        save_config()
+        
+        # Update running streamers
+        for stream in config.get('streams', []):
+            if stream['id'] in streamers:
+                streamers[stream['id']].update_config(stream)
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/camera_snapshot/<stream_id>')
+def api_camera_snapshot(stream_id):
+    """Get a snapshot from a camera for zone editor"""
+    try:
+        import cv2
+        import base64
+        
+        # Find the stream
+        stream = None
+        for s in config.get('streams', []):
+            if s['id'] == stream_id:
+                stream = s
+                break
+        
+        if not stream:
+            return jsonify({'success': False, 'error': 'Stream not found'}), 404
+        
+        # Capture a frame
+        cap = cv2.VideoCapture(stream['rtsp_url'], cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            return jsonify({'success': False, 'error': 'Failed to open camera stream'}), 500
+        
+        # Read frame
+        ret, frame = cap.read()
+        cap.release()
+        
+        if not ret:
+            return jsonify({'success': False, 'error': 'Failed to capture frame'}), 500
+        
+        # Resize for web display
+        height, width = frame.shape[:2]
+        max_width = 640
+        if width > max_width:
+            scale = max_width / width
+            new_width = max_width
+            new_height = int(height * scale)
+            frame = cv2.resize(frame, (new_width, new_height))
+        
+        # Encode as JPEG
+        ret, buffer = cv2.imencode('.jpg', frame)
+        if not ret:
+            return jsonify({'success': False, 'error': 'Failed to encode frame'}), 500
+        
+        # Convert to base64
+        img_base64 = base64.b64encode(buffer).decode('utf-8')
+        
+        return jsonify({
+            'success': True,
+            'image': f'data:image/jpeg;base64,{img_base64}',
+            'width': frame.shape[1],
+            'height': frame.shape[0]
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 # ==================== Chunk Event API ====================
 
 @app.route('/api/chunk_events')

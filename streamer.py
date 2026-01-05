@@ -33,13 +33,30 @@ class Streamer:
         self.frame_queue = queue.Queue(maxsize=2)
         self.running = True
         
+        # Tapo-style recording parameters
+        self.retrigger_time = config.get('retrigger_time', 5)
+        self.max_clip_length = config.get('max_clip_length', 300)
+        self.pre_record_buffer = config.get('pre_record_buffer', 0)
+        self.motion_end_time = 0  # Track when motion ended for retrigger
+        self.recording_start_time = 0  # Track recording duration
+        
         # Hardware pipeline (runs independently, always encoding)
         self.hw_pipeline = None
+
+        # Get zones based on zone_mode (global config)
+        zone_mode = config.get('zone_mode', 'all')
+        if zone_mode == 'individual':
+            # Use per-camera zones
+            zones = config.get('motion_zones', [])
+        else:
+            # Use global zones from root config
+            from app import config as global_config
+            zones = global_config.get('motion_zones', [])
 
         self.detector = MotionDetector(
             sensitivity=config.get('motion_sensitivity', 25),
             min_area=config.get('motion_min_area', 500),
-            zones=config.get('motion_zones', []),
+            zones=zones,
             cooldown=config.get('motion_cooldown', 10),
             detection_scale=config.get('motion_detection_scale', 0.25),
             blur_kernel=config.get('motion_blur_kernel', 5),
@@ -180,34 +197,75 @@ class Streamer:
                 
                 # Wait for motion
                 if not self.motion_active:
-                    # Stop pipeline if motion ended
+                    # Check if retrigger time has elapsed before stopping
                     if pipeline_running:
-                        self.logger.info("⏹ Motion ended. Stopping pipeline...")
+                        # Track when motion ended
+                        if self.motion_end_time == 0:
+                            self.motion_end_time = time.time()
+                            self.logger.info(f"Motion ended. Waiting {self.retrigger_time}s for retrigger...")
                         
-                        # Stop the pipeline
-                        if self.hw_pipeline:
-                            self.hw_pipeline.stop()
-                            self.hw_pipeline = None
-                        pipeline_running = False
-                        
-                        # Give GStreamer time to finalize the file
-                        time.sleep(2)
-                        
-                        # Upload the complete motion event file
-                        if current_output_file and Path(current_output_file).exists():
-                            file_size = Path(current_output_file).stat().st_size
-                            if file_size > 100000:  # Valid file
-                                self._queue_chunk_upload(Path(current_output_file))
-                                self.logger.info(f"✓ Motion event saved: {current_output_file} ({file_size} bytes)")
-                            else:
-                                self.logger.warning(f"⚠ File too small: {current_output_file} ({file_size} bytes)")
-                        
-                        current_output_file = None
+                        # Wait for retrigger time before stopping
+                        elapsed = time.time() - self.motion_end_time
+                        if elapsed >= self.retrigger_time:
+                            self.logger.info("⏹ Retrigger time elapsed. Stopping pipeline...")
+                            
+                            # Stop the pipeline
+                            if self.hw_pipeline:
+                                self.hw_pipeline.stop()
+                                self.hw_pipeline = None
+                            pipeline_running = False
+                            
+                            # Give GStreamer time to finalize the file
+                            time.sleep(2)
+                            
+                            # Upload the complete motion event file
+                            if current_output_file and Path(current_output_file).exists():
+                                file_size = Path(current_output_file).stat().st_size
+                                if file_size > 100000:  # Valid file
+                                    self._queue_chunk_upload(Path(current_output_file))
+                                    self.logger.info(f"✓ Motion event saved: {current_output_file} ({file_size} bytes)")
+                                else:
+                                    self.logger.warning(f"⚠ File too small: {current_output_file} ({file_size} bytes)")
+                            
+                            current_output_file = None
+                            self.motion_end_time = 0
+                            self.recording_start_time = 0
                     
                     time.sleep(0.2)
                     continue
                 
-                # Motion is active - start pipeline for this event
+                # Motion is active
+                # Reset motion end time if motion reactivates
+                if self.motion_end_time > 0:
+                    self.logger.info("🔄 Motion retriggered! Continuing current recording...")
+                    self.motion_end_time = 0
+                
+                # Check max clip length enforcement
+                if pipeline_running and self.recording_start_time > 0:
+                    recording_duration = time.time() - self.recording_start_time
+                    if recording_duration >= self.max_clip_length:
+                        self.logger.info(f"⏱ Max clip length ({self.max_clip_length}s) reached. Starting new clip...")
+                        
+                        # Stop current pipeline
+                        if self.hw_pipeline:
+                            self.hw_pipeline.stop()
+                            self.hw_pipeline = None
+                        
+                        time.sleep(2)
+                        
+                        # Upload current clip
+                        if current_output_file and Path(current_output_file).exists():
+                            file_size = Path(current_output_file).stat().st_size
+                            if file_size > 100000:
+                                self._queue_chunk_upload(Path(current_output_file))
+                                self.logger.info(f"✓ Max length clip saved: {current_output_file}")
+                        
+                        # Force restart by setting pipeline_running to False
+                        pipeline_running = False
+                        current_output_file = None
+                        self.recording_start_time = 0
+                
+                # Start pipeline for this event
                 if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
                         # Generate unique filename for this motion event
@@ -225,6 +283,7 @@ class Streamer:
                         )
                         self.hw_pipeline.start()
                         pipeline_running = True
+                        self.recording_start_time = time.time()
                         self.logger.info("✓ Hardware pipeline recording continuous motion event")
                 
                 time.sleep(0.5)
@@ -282,11 +341,25 @@ class Streamer:
     def update_config(self, config):
         """Update configuration"""
         self.config = config
+        
+        # Update Tapo-style recording parameters
+        self.retrigger_time = config.get('retrigger_time', 5)
+        self.max_clip_length = config.get('max_clip_length', 300)
+        self.pre_record_buffer = config.get('pre_record_buffer', 0)
+        
         try:
+            # Get zones based on zone_mode
+            zone_mode = config.get('zone_mode', 'all')
+            if zone_mode == 'individual':
+                zones = config.get('motion_zones', [])
+            else:
+                from app import config as global_config
+                zones = global_config.get('motion_zones', [])
+            
             self.detector.update_settings(
                 sensitivity=config.get('motion_sensitivity'),
                 min_area=config.get('motion_min_area'),
-                zones=config.get('motion_zones'),
+                zones=zones,
                 cooldown=config.get('motion_cooldown'),
                 detection_scale=config.get('motion_detection_scale'),
                 blur_kernel=config.get('motion_blur_kernel'),
