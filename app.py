@@ -697,7 +697,6 @@ def api_zone_settings():
         zone_mode = data.get('zone_mode', 'all')
         zones = data.get('zones', [])
         sensitivity = data.get('motion_sensitivity', 100)
-        retrigger_time = data.get('retrigger_time', 5)
         pre_record_buffer = data.get('pre_record_buffer', 0)
         
         # Update zone mode globally
@@ -709,7 +708,6 @@ def api_zone_settings():
             # Update all streams with same settings
             for stream in config.get('streams', []):
                 stream['motion_sensitivity'] = sensitivity
-                stream['retrigger_time'] = retrigger_time
                 stream['pre_record_buffer'] = pre_record_buffer
         else:
             # Apply zones to individual stream
@@ -717,7 +715,6 @@ def api_zone_settings():
                 if stream['id'] == stream_id:
                     stream['motion_zones'] = zones
                     stream['motion_sensitivity'] = sensitivity
-                    stream['retrigger_time'] = retrigger_time
                     stream['pre_record_buffer'] = pre_record_buffer
                     break
         

@@ -34,9 +34,8 @@ class Streamer:
         self.running = True
         
         # Tapway-style recording parameters
-        self.retrigger_time = config.get('retrigger_time', 5)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)
-        self.motion_end_time = 0  # Track when motion ended for retrigger
+        self.motion_end_time = 0  # Track when motion ended
         self.recording_start_time = 0  # Track recording duration
         
         # Hardware pipeline (runs independently, always encoding)
@@ -201,12 +200,16 @@ class Streamer:
                         # Track when motion ended
                         if self.motion_end_time == 0:
                             self.motion_end_time = time.time()
-                            self.logger.info(f"Motion ended. Waiting {self.retrigger_time}s for retrigger...")
+                            chunk_duration = self.config.get('chunk_duration', 5)
+                            self.logger.info(f"Motion ended. Recording for {chunk_duration} more seconds to complete current chunk...")
                         
-                        # Wait for retrigger time before stopping
+                        # Calculate time since motion ended
                         elapsed = time.time() - self.motion_end_time
-                        if elapsed >= self.retrigger_time:
-                            self.logger.info("⏹ Retrigger time elapsed. Stopping pipeline...")
+                        chunk_duration = self.config.get('chunk_duration', 5)
+                        
+                        # Wait for current chunk to complete to ensure uniform chunk durations
+                        if elapsed >= chunk_duration:
+                            self.logger.info("⏹ Current chunk completed. Stopping pipeline...")
                             
                             # Stop the pipeline
                             if self.hw_pipeline:
@@ -231,7 +234,7 @@ class Streamer:
                 # Motion is active
                 # Reset motion end time if motion reactivates
                 if self.motion_end_time > 0:
-                    self.logger.info("🔄 Motion retriggered! Continuing recording...")
+                    self.logger.info("🔄 Motion detected again! Continuing recording...")
                     self.motion_end_time = 0
                 
                 # Start pipeline for this event
@@ -345,7 +348,6 @@ class Streamer:
         self.config = config
         
         # Update Tapway-style recording parameters
-        self.retrigger_time = config.get('retrigger_time', 5)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)
         
         try:

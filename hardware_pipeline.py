@@ -63,6 +63,12 @@ class HardwarePipeline:
         
         bitrate = int(self.config.get('chunk_bitrate', 2000000))
         
+        # Calculate keyframe interval to ensure splits at exact durations
+        # For 25fps video: keyframe every second = idrinterval=25
+        # This ensures splitmuxsink can split close to the target duration
+        fps = 25  # Assume 25fps for most CCTV cameras
+        keyframe_interval = fps  # Keyframe every second for precise splits
+        
         # FIXED CHUNK DURATION MODE: Split based on chunk_duration setting
         # Uses splitmuxsink to create fixed-duration chunks
         pipeline = [
@@ -80,12 +86,13 @@ class HardwarePipeline:
             f'bitrate={bitrate}',
             'preset-level=1',
             'insert-sps-pps=true',
-            'idrinterval=30',  # Regular keyframes for seekability
+            f'idrinterval={keyframe_interval}',  # Keyframe every second for precise splits
             '!', 'h264parse',
             '!', 'video/x-h264,stream-format=avc,alignment=au',
             '!', 'splitmuxsink',  # Split into fixed-duration chunks
             f'location={output_pattern}',
             f'max-size-time={chunk_duration_ns}',  # Split every N seconds
+            'send-keyframe-requests=true',  # Request keyframes at split points
             'muxer-factory=qtmux',
             'muxer-properties="properties,faststart=true"',
             'async-finalize=true'  # Finalize files in background
