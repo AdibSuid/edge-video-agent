@@ -1,4 +1,4 @@
-# Quick Start: Using Tapo-Style Features
+# Quick Start: Using Tapway-Style Features
 
 ## Step-by-Step Guide
 
@@ -32,9 +32,15 @@ http://localhost:5000
    - Prevents extremely long files
    - Default: 300 seconds (5 minutes)
 
+4. **Chunk Duration** (5-15 seconds)
+   - Duration of individual video chunks
+   - Smaller = More frequent files
+   - Larger = Fewer, longer files
+   - Default: 5 seconds
+
 ### 3. Set Up Detection Zones (Advanced)
 
-Click the **"Zone Editor (Tapo-style)"** button on the dashboard.
+Click the **"Zone Editor (Tapway-style)"** button on the dashboard.
 
 #### Zone Editor Steps:
 
@@ -176,7 +182,13 @@ Zones: Focus on parking spots, not street
 | 5-10s | Balanced | Most scenarios (default: 5s) |
 | 15-30s | Long continuous clips | Areas with intermittent motion |
 
-### Max Clip Length Guide
+### Chunk Duration Guide
+
+| Value | Behavior | Use Case |
+|-------|----------|----------|
+| 5s | Very frequent files | Real-time monitoring, quick access |
+| 8-10s | Balanced | Most scenarios |
+| 12-15s | Longer chunks | Reduce file count, easier review |
 
 | Value | File Size | Use Case |
 |-------|-----------|----------|
@@ -275,9 +287,9 @@ grep -A5 "motion_zones" config.yaml
 ## Support
 
 If you need help:
-1. Check `TAPO_FEATURES.md` for detailed documentation
+1. Check `TAPWAY_FEATURES.md` for detailed documentation
 2. Review logs: `logs/<camera_id>.log`
 3. Test with different sensitivity values
 4. Verify zones are correctly drawn
 
-Enjoy your Tapo-style motion detection! 🎥
+Enjoy your Tapway-style motion detection! 🎥

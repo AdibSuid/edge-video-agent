@@ -1,7 +1,7 @@
-# Tapo-Style Motion Detection Features
+# Tapway-Style Motion Detection Features
 
 ## Overview
-The system now includes **Tapo camera-inspired features** for motion detection and video recording. These features provide fine-grained control over motion sensitivity, detection zones, and recording behavior - just like commercial Tapo/TP-Link cameras.
+The system now includes **Tapway camera-inspired features** for motion detection and video recording. These features provide fine-grained control over motion sensitivity, detection zones, and recording behavior - just like commercial Tapway/TP-Link cameras.
 
 ## New Features Implemented
 
@@ -13,25 +13,32 @@ The system now includes **Tapo camera-inspired features** for motion detection a
 - Higher values = only detect major motion
 
 ### 2. Detection Zone Editor
-- **Visual zone drawing interface** similar to Tapo mobile app
+- **Visual zone drawing interface** similar to Tapway mobile app
 - **Multiple zones per camera**: Draw rectangular zones where motion should be detected
 - **Zone modes**:
   - **All Cameras**: Apply the same zones to all cameras
   - **Individual**: Set different zones for each camera
 - **Interactive canvas**: Click and drag to draw detection zones on live camera snapshot
 
-### 3. Retrigger Time (Tapo's "Cool-down Period")
-- **Configurable wait time** (1-30 seconds) after motion ends before starting a new clip
-- Prevents creating multiple small clips for continuous activity
-- Example: If someone walks through frame multiple times, system continues recording instead of creating many separate clips
+### 3. Configurable Chunk Duration
+- **Fixed-duration video chunks** (5-15 seconds)
+- **Consistent file sizes**: Easy to manage and predict storage
+- **Behavior**: If chunk_duration=8s and motion lasts 20s, creates 3 chunks: 8s, 8s, 4s
+- **Works independently**: Chunk duration is separate from motion duration
+- Example: 5 seconds of motion with 8s chunks → Still creates 8-second video
 
-### 4. Maximum Clip Length
-- **Automatic clip splitting** when recording exceeds maximum duration (30s - 10 minutes)
-- Prevents extremely long video files
-- Automatically starts new clip when max length reached during continuous motion
+### 4. Retrigger Time (Tapway's "Cool-down Period")
+- **Configurable wait time** (1-30 seconds) after motion ends before starting a new recording session
+- Prevents creating multiple separate recording sessions for continuous activity
+- Example: If someone walks through frame multiple times within retrigger window, system continues same recording session
+
+### 5. Maximum Clip Length
+- **Automatic recording session restart** when recording exceeds maximum duration (30s - 10 minutes)
+- Prevents extremely long recording sessions
+- Automatically starts new session when max length reached during continuous motion
 - Default: 300 seconds (5 minutes)
 
-### 5. Pre-record Buffer (Coming Soon)
+### 6. Pre-record Buffer (Coming Soon)
 - **Record before motion starts** (0-5 seconds)
 - Captures what happened just before motion was detected
 - Requires buffering implementation (currently set to 0)
@@ -40,11 +47,11 @@ The system now includes **Tapo camera-inspired features** for motion detection a
 
 ### Global Settings (config.yaml)
 ```yaml
-# Tapo-style Motion Detection Settings (Global defaults)
+# Tapway-style Motion Detection Settings (Global defaults)
 motion_sensitivity: 100        # 0-255, lower = more sensitive
 motion_zones: []               # Global zones if zone_mode = "all"
 
-# Tapo-style Recording Features
+# Tapway-style Recording Features
 retrigger_time: 5             # Seconds to wait before starting new clip
 pre_record_buffer: 0          # Seconds to record before motion (future feature)
 max_clip_length: 300          # Maximum clip duration in seconds (5 min)
@@ -57,6 +64,7 @@ streams:
 - id: Pantry
   name: Camera 192.168.0.14
   rtsp_url: rtsp://admin:pass@192.168.0.14:554/...
+  chunk_duration: 5           # Video chunk duration (5-15 seconds)
   
   # Per-camera motion settings (override global)
   motion_sensitivity: 100      # Per-camera sensitivity
@@ -77,7 +85,7 @@ Each camera card on the dashboard now includes:
 - Instant apply on change
 
 ### Zone Editor Page
-Access via: **Dashboard → Zone Editor (Tapo-style)** button
+Access via: **Dashboard → Zone Editor (Tapway-style)** button
 
 Features:
 1. **Camera selection dropdown**
@@ -176,9 +184,9 @@ Body: {
 }
 ```
 
-## Comparison with Tapo Cameras
+## Comparison with Tapway Cameras
 
-| Feature | Tapo App | This System |
+| Feature | Tapway App | This System |
 |---------|----------|-------------|
 | Motion Sensitivity | ✅ 10 levels | ✅ 256 levels (0-255) |
 | Detection Zones | ✅ Visual drawing | ✅ Visual drawing |
@@ -189,13 +197,13 @@ Body: {
 | Pre-record buffer | ✅ Yes | 🚧 Coming soon |
 | Hardware acceleration | ❌ No | ✅ NVENC/NVDEC |
 
-## Advantages Over Tapo
+## Advantages Over Tapway
 
 1. **Hardware Acceleration**: Uses NVIDIA NVENC/NVDEC for better performance
-2. **More sensitivity levels**: 256 levels vs Tapo's 10
+2. **More sensitivity levels**: 256 levels vs Tapway's 10
 3. **Global zones**: Apply same zones to multiple cameras at once
-4. **Longer recordings**: Up to 10 minutes vs Tapo's typical 2-5 minutes
-5. **Flexible retrigger**: 1-30 seconds vs Tapo's fixed intervals
+4. **Longer recordings**: Up to 10 minutes vs Tapway's typical 2-5 minutes
+5. **Flexible retrigger**: 1-30 seconds vs Tapway's fixed intervals
 6. **Open source**: Fully customizable
 7. **Local processing**: No cloud dependency (optional cloud upload)
 
@@ -299,7 +307,7 @@ if recording_duration >= max_clip_length:
 
 ## Summary
 
-Your edge video agent now has **Tapo-style motion detection** with:
+Your edge video agent now has **Tapway-style motion detection** with:
 - ✅ Visual zone editor
 - ✅ Per-camera sensitivity control
 - ✅ Retrigger time (cool-down period)

@@ -48,23 +48,23 @@ class HardwarePipeline:
         self.logger.info("✓ Hardware pipeline started")
     
     def _run_pipeline(self):
-        """Run the GStreamer pipeline process - records ONE continuous file per motion event"""
+        """Run the GStreamer pipeline process - records chunks based on chunk_duration"""
         # Save directly to tmp/chunks like old version
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        # Use the provided output file or generate one
-        if not self.output_file:
-            import uuid
-            chunk_id = str(uuid.uuid4())[:8]
-            self.output_file = output_dir / f"{self.stream_id}_{chunk_id}.mp4"
-        else:
-            self.output_file = Path(self.output_file)
+        # Get chunk duration from config (5-15 seconds)
+        chunk_duration = int(self.config.get('chunk_duration', 5))
+        chunk_duration_ns = chunk_duration * 1000000000  # Convert to nanoseconds
+        
+        # Generate base filename pattern for splitmuxsink
+        timestamp = int(time.time())
+        output_pattern = str(output_dir / f"{self.stream_id}_{timestamp}_%05d.mp4")
         
         bitrate = int(self.config.get('chunk_bitrate', 2000000))
         
-        # COMMERCIAL CCTV MODE: Record entire motion event as ONE continuous video
-        # No splitmuxsink, just direct MP4 recording
+        # FIXED CHUNK DURATION MODE: Split based on chunk_duration setting
+        # Uses splitmuxsink to create fixed-duration chunks
         pipeline = [
             'gst-launch-1.0', '-e',
             'uridecodebin',
@@ -83,15 +83,15 @@ class HardwarePipeline:
             'idrinterval=30',  # Regular keyframes for seekability
             '!', 'h264parse',
             '!', 'video/x-h264,stream-format=avc,alignment=au',
-            '!', 'qtmux',  # Direct MP4 muxing (no splitting)
-            'faststart=true',
-            'fragment-duration=1000',
-            '!', 'filesink',
-            f'location={self.output_file}',
-            'sync=false'  # Don't block on disk writes
+            '!', 'splitmuxsink',  # Split into fixed-duration chunks
+            f'location={output_pattern}',
+            f'max-size-time={chunk_duration_ns}',  # Split every N seconds
+            'muxer-factory=qtmux',
+            'muxer-properties="properties,faststart=true"',
+            'async-finalize=true'  # Finalize files in background
         ]
         
-        self.logger.info(f"Recording motion event to: {self.output_file}")
+        self.logger.info(f"Recording chunks with {chunk_duration}s duration to: {output_pattern}")
         self.logger.info(f"Pipeline command: {' '.join(pipeline)}")
         
         # Start pipeline (no auto-reconnect, just record this one event)
@@ -103,7 +103,7 @@ class HardwarePipeline:
                 preexec_fn=os.setsid
             )
             
-            self.logger.info("✓ NVDEC + NVENC pipeline active - recording motion event")
+            self.logger.info(f"✓ NVDEC + NVENC pipeline active - recording {chunk_duration}s chunks")
             
             # Monitor stderr for errors
             for line in self.process.stderr:
@@ -117,7 +117,7 @@ class HardwarePipeline:
             
             # Process ended
             self.process.wait()
-            self.logger.info(f"Recording complete: {self.output_file}")
+            self.logger.info(f"Recording complete")
                 
         except Exception as e:
             self.logger.error(f"Pipeline exception: {e}")

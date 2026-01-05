@@ -33,7 +33,7 @@ class Streamer:
         self.frame_queue = queue.Queue(maxsize=2)
         self.running = True
         
-        # Tapo-style recording parameters
+        # Tapway-style recording parameters
         self.retrigger_time = config.get('retrigger_time', 5)
         self.max_clip_length = config.get('max_clip_length', 300)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)
@@ -179,13 +179,13 @@ class Streamer:
         self.logger.info("Motion detection stopped")
 
     def _pipeline_manager_loop(self):
-        """Start/stop hardware pipeline based on motion - ONE CONTINUOUS FILE per event"""
-        self.logger.info("Starting pipeline manager (motion-triggered continuous recording)")
+        """Start/stop hardware pipeline based on motion - creates fixed-duration chunks"""
+        self.logger.info("Starting pipeline manager (motion-triggered chunked recording)")
         
         pipeline_running = False
         output_dir = Path('tmp/chunks')
         output_dir.mkdir(parents=True, exist_ok=True)
-        current_output_file = None
+        recording_session_start = None  # Track when recording session started
         
         while self.running:
             try:
@@ -215,19 +215,14 @@ class Streamer:
                                 self.hw_pipeline = None
                             pipeline_running = False
                             
-                            # Give GStreamer time to finalize the file
+                            # Give GStreamer time to finalize files
                             time.sleep(2)
                             
-                            # Upload the complete motion event file
-                            if current_output_file and Path(current_output_file).exists():
-                                file_size = Path(current_output_file).stat().st_size
-                                if file_size > 100000:  # Valid file
-                                    self._queue_chunk_upload(Path(current_output_file))
-                                    self.logger.info(f"✓ Motion event saved: {current_output_file} ({file_size} bytes)")
-                                else:
-                                    self.logger.warning(f"⚠ File too small: {current_output_file} ({file_size} bytes)")
+                            # Upload all chunks created during this session
+                            if recording_session_start:
+                                self._upload_session_chunks(recording_session_start)
                             
-                            current_output_file = None
+                            recording_session_start = None
                             self.motion_end_time = 0
                             self.recording_start_time = 0
                     
@@ -237,14 +232,14 @@ class Streamer:
                 # Motion is active
                 # Reset motion end time if motion reactivates
                 if self.motion_end_time > 0:
-                    self.logger.info("🔄 Motion retriggered! Continuing current recording...")
+                    self.logger.info("🔄 Motion retriggered! Continuing recording...")
                     self.motion_end_time = 0
                 
                 # Check max clip length enforcement
                 if pipeline_running and self.recording_start_time > 0:
                     recording_duration = time.time() - self.recording_start_time
                     if recording_duration >= self.max_clip_length:
-                        self.logger.info(f"⏱ Max clip length ({self.max_clip_length}s) reached. Starting new clip...")
+                        self.logger.info(f"⏱ Max clip length ({self.max_clip_length}s) reached. Restarting pipeline...")
                         
                         # Stop current pipeline
                         if self.hw_pipeline:
@@ -253,38 +248,33 @@ class Streamer:
                         
                         time.sleep(2)
                         
-                        # Upload current clip
-                        if current_output_file and Path(current_output_file).exists():
-                            file_size = Path(current_output_file).stat().st_size
-                            if file_size > 100000:
-                                self._queue_chunk_upload(Path(current_output_file))
-                                self.logger.info(f"✓ Max length clip saved: {current_output_file}")
+                        # Upload chunks from previous session
+                        if recording_session_start:
+                            self._upload_session_chunks(recording_session_start)
                         
                         # Force restart by setting pipeline_running to False
                         pipeline_running = False
-                        current_output_file = None
+                        recording_session_start = None
                         self.recording_start_time = 0
                 
                 # Start pipeline for this event
                 if not pipeline_running:
                     if self._gst_available and self.config.get('use_hardware_pipeline', True):
-                        # Generate unique filename for this motion event
-                        timestamp = int(time.time())
-                        current_output_file = str(output_dir / f'{self.stream_id}_{timestamp}.mp4')
+                        recording_session_start = time.time()
                         
-                        self.logger.info(f"🎬 Motion detected! Recording to: {current_output_file}")
+                        self.logger.info(f"🎬 Motion detected! Starting chunked recording (chunk_duration={self.config.get('chunk_duration', 5)}s)")
                         
-                        # Start hardware pipeline with specific output file
+                        # Start hardware pipeline - it will create chunks automatically
                         self.hw_pipeline = HardwarePipeline(
                             self.stream_id, 
                             self.rtsp_url, 
                             self.config,
-                            output_file=current_output_file
+                            output_file=None  # splitmuxsink handles filenames
                         )
                         self.hw_pipeline.start()
                         pipeline_running = True
                         self.recording_start_time = time.time()
-                        self.logger.info("✓ Hardware pipeline recording continuous motion event")
+                        self.logger.info("✓ Hardware pipeline recording with fixed-duration chunks")
                 
                 time.sleep(0.5)
                 
@@ -293,6 +283,41 @@ class Streamer:
                 import traceback
                 traceback.print_exc()
                 time.sleep(5)
+    
+    
+    def _upload_session_chunks(self, session_start_time):
+        """Upload all chunks created during a recording session"""
+        try:
+            output_dir = Path('tmp/chunks')
+            if not output_dir.exists():
+                return
+            
+            # Find all chunks created during this session (within 1 second of session start)
+            session_timestamp = int(session_start_time)
+            pattern = f"{self.stream_id}_{session_timestamp}_*.mp4"
+            
+            chunks = list(output_dir.glob(pattern))
+            if not chunks:
+                self.logger.warning(f"No chunks found for pattern: {pattern}")
+                return
+            
+            # Sort by filename to upload in order
+            chunks.sort()
+            
+            self.logger.info(f"Found {len(chunks)} chunk(s) to upload")
+            
+            for chunk_path in chunks:
+                file_size = chunk_path.stat().st_size
+                if file_size > 100000:  # Valid file (>100KB)
+                    self._queue_chunk_upload(chunk_path)
+                    self.logger.info(f"✓ Queued chunk: {chunk_path.name} ({file_size} bytes)")
+                else:
+                    self.logger.warning(f"⚠ Skipping small file: {chunk_path.name} ({file_size} bytes)")
+                    
+        except Exception as e:
+            self.logger.error(f"Error uploading session chunks: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _queue_chunk_upload(self, chunk_path):
         """Queue chunk for cloud upload"""
@@ -342,7 +367,7 @@ class Streamer:
         """Update configuration"""
         self.config = config
         
-        # Update Tapo-style recording parameters
+        # Update Tapway-style recording parameters
         self.retrigger_time = config.get('retrigger_time', 5)
         self.max_clip_length = config.get('max_clip_length', 300)
         self.pre_record_buffer = config.get('pre_record_buffer', 0)

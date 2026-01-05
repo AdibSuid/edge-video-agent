@@ -88,7 +88,7 @@
                         <i class="fas fa-search"></i> Discover Cameras
                     </a>
                     <a href="/zone_editor" class="btn btn-success">
-                        <i class="fas fa-draw-polygon"></i> Zone Editor (Tapo-style)
+                        <i class="fas fa-draw-polygon"></i> Zone Editor (Tapway-style)
                     </a>
                     <a href="/motion" class="btn btn-info">
                         <i class="fas fa-cog"></i> Motion Settings
@@ -149,8 +149,8 @@
                                 <label class="form-check-label" for="chunkingEnabled-{{ stream.id }}">Chunking Enabled</label>
                             </div>
                             <div class="mt-2">
-                                <label for="chunkDuration-{{ stream.id }}" class="form-label small">Chunk Duration (5-10s):</label>
-                                <input type="number" class="form-control form-control-sm" min="5" max="10" id="chunkDuration-{{ stream.id }}" value="{{ stream.chunk_duration|default(5) }}"
+                                <label for="chunkDuration-{{ stream.id }}" class="form-label small">Chunk Duration (5-15s):</label>
+                                <input type="number" class="form-control form-control-sm" min="5" max="15" id="chunkDuration-{{ stream.id }}" value="{{ stream.chunk_duration|default(5) }}"
                                     onchange="updateStreamSetting('{{ stream.id }}', 'chunk_duration', this.value)">
                             </div>
                             <div class="mt-2">
@@ -159,7 +159,7 @@
                                     onchange="updateStreamSetting('{{ stream.id }}', 'chunk_fps', this.value)">
                             </div>
                             <hr>
-                            <h6 class="text-muted">Tapo-style Recording</h6>
+                            <h6 class="text-muted">Tapway-style Recording</h6>
                             <div class="mt-2">
                                 <label for="sensitivity-{{ stream.id }}" class="form-label small">
                                     Sensitivity: <span id="sensValue-{{ stream.id }}">{{ stream.motion_sensitivity|default(100) }}</span>

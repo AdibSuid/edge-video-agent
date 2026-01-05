@@ -5,7 +5,7 @@ cloud_username: tapway
 encoding_crf: 28
 encoding_preset: ultrafast
 
-# Tapo-style Motion Detection Settings (Global defaults)
+# Tapway-style Motion Detection Settings (Global defaults)
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 0.25
@@ -16,7 +16,7 @@ motion_min_area: 5000
 motion_sensitivity: 100
 motion_zones: []
 
-# Tapo-style Recording Features
+# Tapway-style Recording Features
 retrigger_time: 5          # Seconds to wait before starting new clip after motion ends
 pre_record_buffer: 0       # Seconds to record before motion (0-5, requires buffering)
 max_clip_length: 300       # Maximum clip duration in seconds (5 minutes default)
@@ -30,7 +30,7 @@ streams:
   name: Camera 192.168.0.14
   rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
-  # Per-camera motion settings (Tapo-style)
+  # Per-camera motion settings (Tapway-style)
   motion_sensitivity: 100      # Override global sensitivity (0-255)
   motion_zones: []             # Per-camera zones (if zone_mode is "individual")
   retrigger_time: 5           # Per-camera retrigger time

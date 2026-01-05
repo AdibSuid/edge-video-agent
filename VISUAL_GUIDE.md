@@ -1,4 +1,4 @@
-# Visual Guide: Tapo-Style Motion Detection
+# Visual Guide: Tapway-Style Motion Detection
 
 ## System Architecture
 
@@ -120,85 +120,68 @@ User Action                    System Response
 └───────────────────────────────┘
 ```
 
-## Retrigger Time Behavior
+## Recording Behavior with Fixed Chunk Duration
 
-### Example: 5-Second Retrigger
+### Example: 8-Second Chunks with Retrigger
 
 ```
 Timeline (seconds):
-0    5    10   15   20   25   30   35   40
+0    8    16   24   32   40   48   56   64
 │────│────│────│────│────│────│────│────│
 │                                        
-│ Motion Detected
-├─► Start Recording "clip1.mp4"
+│ Motion Detected (5s duration)
+├─► Start Recording Session
+│   └─► Create chunk1.mp4 (8s)
 │
-│                Motion Continues
+│        Motion Ends at 5s
+│        Wait retrigger (5s)
+│
+│                No more motion
+│                (Retrigger elapsed at 10s)
 │                ↓
 │────────────────│───────────────────────
-│                Still recording clip1.mp4
+                 Stop & Upload chunk1.mp4
+                 (8 seconds total)
+
+
+Example 2: Long Motion (20s)
+├─► Motion Start
+│   └─► chunk1.mp4 (0-8s)
+│       └─► chunk2.mp4 (8-16s)
+│           └─► chunk3.mp4 (16-20s = 4s chunk)
 │
-│                          Motion Ends
-│                          ↓
-│──────────────────────────│─────────────
-│                          Start 5s timer
-│
-│                             Motion Again!
-│                             (Within 5s)
-│                             ↓
-│─────────────────────────────│──────────
-│                             Continue clip1.mp4
-│                             (Retriggered!)
-│
-│                                   Motion Ends
-│                                   ↓
-│───────────────────────────────────│────
-│                                   Start 5s timer
-│
-│                                        No Motion
-│                                        (5s elapsed)
-│                                        ↓
-│────────────────────────────────────────│
-                                         Stop & Upload
-                                         clip1.mp4
+│                    Motion Ends
+│                    Wait retrigger (5s)
+│                    ↓
+│────────────────────│──────────────────
+                     Stop & Upload all 3 chunks
 ```
 
-### Without Retrigger (Old Behavior)
+### Without Fixed Chunks (Old Behavior - Not Used)
 
 ```
 Timeline:
 0    5    10   15   20   25   30   35   40
 │────│────│────│────│────│────│────│────│
 
-Motion → Start clip1.mp4
-Motion Ends → Stop clip1.mp4
+Motion (5s) → One 5-second file
+Motion Ends → Stop recording immediately
 
-     Motion → Start clip2.mp4
-     Motion Ends → Stop clip2.mp4
-
-                Motion → Start clip3.mp4
-                Motion Ends → Stop clip3.mp4
-
-Result: 3 separate clips for same event! ❌
+Result: File duration = Motion duration ❌
 ```
 
-### With 5s Retrigger (New Behavior)
+### With Fixed Chunks (Current Behavior)
 
 ```
 Timeline:
 0    5    10   15   20   25   30   35   40
 │────│────│────│────│────│────│────│────│
 
-Motion → Start clip1.mp4
-   ├──── Continues recording ────┤
-   Motion Ends... Motion Again!
-                        │
-                        └─► Same clip continues
-                                  │
-                                  Motion Ends
-                                  Wait 5s...
-                                          Stop & Upload
+Motion (5s) → One 8-second file (chunk_duration=8s)
+Motion Ends → Continue to complete chunk
+            → Stop at 8s mark
 
-Result: 1 continuous clip for event! ✅
+Result: File duration = chunk_duration setting ✅
 ```
 
 ## Max Clip Length Example
@@ -283,8 +266,9 @@ Camera View:
 │  │                  │  │                  │          │
 │  │ ☑ Streaming      │  │ ☑ Streaming      │          │
 │  │ ☑ Chunking       │  │ ☑ Chunking       │          │
+│  │ Duration: 5s     │  │ Duration: 10s    │          │
 │  │                  │  │                  │          │
-│  │ Tapo Recording   │  │ Tapo Recording   │          │
+│  │ Tapway Recording   │  │ Tapway Recording   │          │
 │  │ ╶─╴╶─╴╶─╴╶─╴╶─╴ │  │ ╶─╴╶─╴╶─╴╶─╴╶─╴ │          │
 │  │ Sens:  ─●────    │  │ Sens:  ───●──    │          │
 │  │        100       │  │        150       │          │
@@ -354,36 +338,58 @@ streams:
 
 ## File Output Examples
 
-### Scenario: Person walks through office 3 times
+### Scenario: Person walks through office (5 seconds of motion)
 
-**Without Retrigger:**
+**With chunk_duration = 8 seconds:**
 ```
 tmp/chunks/
-├── Office_1735712345.mp4  (5 seconds)
-├── Office_1735712358.mp4  (3 seconds)
-└── Office_1735712372.mp4  (4 seconds)
+└── Office_1735712345_00000.mp4  (8 seconds)
 ```
 
-**With 10s Retrigger:**
+**With chunk_duration = 5 seconds:**
 ```
 tmp/chunks/
-└── Office_1735712345.mp4  (30 seconds, continuous)
+└── Office_1735712345_00000.mp4  (5 seconds)
 ```
 
-### Scenario: 15-minute continuous motion with 5-minute max
+### Scenario: Continuous activity for 25 seconds
 
-**Result:**
+**With chunk_duration = 8 seconds:**
 ```
 tmp/chunks/
-├── Pantry_1735712000.mp4  (300 seconds = 5 min)
-├── Pantry_1735712300.mp4  (300 seconds = 5 min)
-└── Pantry_1735712600.mp4  (300 seconds = 5 min)
+├── Pantry_1735712000_00000.mp4  (8 seconds)
+├── Pantry_1735712000_00001.mp4  (8 seconds)
+├── Pantry_1735712000_00002.mp4  (8 seconds)
+└── Pantry_1735712000_00003.mp4  (1 second)
+```
+
+**With chunk_duration = 15 seconds:**
+```
+tmp/chunks/
+├── Pantry_1735712000_00000.mp4  (15 seconds)
+└── Pantry_1735712000_00001.mp4  (10 seconds)
+```
+
+### Scenario: Multiple motion events with 10s retrigger
+
+**Timeline:**
+- Motion 1: 0-5 seconds (5s motion)
+- Gap: 5-12 seconds (7s no motion, within retrigger)
+- Motion 2: 12-15 seconds (3s motion)
+
+**With chunk_duration = 8 seconds:**
+```
+tmp/chunks/
+├── Office_1735712000_00000.mp4  (8 seconds, covers 0-8s)
+└── Office_1735712000_00001.mp4  (7 seconds, covers 8-15s)
+
+Total: 2 chunks for one recording session
 ```
 
 ## Benefits Visualization
 
 ```
-Traditional CCTV          │  Tapo-Style System
+Traditional CCTV          │  Tapway-Style System
 ──────────────────────────┼────────────────────────
 24/7 Recording            │  Motion-only Recording
    ↓                      │     ↓
@@ -409,11 +415,11 @@ Hard to Review            │  Easy to Review
 ## Summary
 
 Your system now provides:
-1. ✅ Visual zone configuration (Tapo-style)
+1. ✅ Visual zone configuration (Tapway-style)
 2. ✅ Per-camera sensitivity control
 3. ✅ Smart retrigger (no duplicate clips)
 4. ✅ Max clip length enforcement
 5. ✅ Real-time updates
 6. ✅ Hardware acceleration maintained
 
-All with an intuitive interface matching commercial Tapo cameras! 🎉
+All with an intuitive interface matching commercial Tapway cameras! 🎉

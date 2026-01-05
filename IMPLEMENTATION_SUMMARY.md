@@ -1,13 +1,13 @@
-# Tapo-Style Features Implementation Summary
+# Tapway-Style Features Implementation Summary
 
 ## What Was Implemented
 
-Your edge video agent now has **complete Tapo camera-style features** for motion detection and recording control!
+Your edge video agent now has **complete Tapway camera-style features** for motion detection and recording control!
 
 ## Files Modified
 
 ### 1. Configuration
-- ✅ `config.yaml` - Added Tapo-style parameters for all cameras
+- ✅ `config.yaml` - Added Tapway-style parameters for all cameras
 
 ### 2. Backend
 - ✅ `motion_detector.py` - Added zone normalization and management methods
@@ -16,11 +16,11 @@ Your edge video agent now has **complete Tapo camera-style features** for motion
 
 ### 3. Frontend
 - ✅ `templates/index.html` - Added sensitivity, retrigger, and max clip sliders to each camera card
-- ✅ `templates/zone_editor.html` - **NEW FILE** - Complete Tapo-style zone drawing interface
+- ✅ `templates/zone_editor.html` - **NEW FILE** - Complete Tapway-style zone drawing interface
 
 ### 4. Documentation
-- ✅ `TAPO_FEATURES.md` - **NEW FILE** - Comprehensive feature documentation
-- ✅ `TAPO_QUICKSTART.md` - **NEW FILE** - Quick start guide with examples
+- ✅ `TAPWAY_FEATURES.md` - **NEW FILE** - Comprehensive feature documentation
+- ✅ `TAPWAY_QUICKSTART.md` - **NEW FILE** - Quick start guide with examples
 
 ## New Features Available
 
@@ -30,13 +30,13 @@ Your edge video agent now has **complete Tapo camera-style features** for motion
 - **Updates**: Real-time without restart
 - **Default**: 100
 
-### 2. Detection Zones (Tapo-style)
+### 2. Detection Zones (Tapway-style)
 - **Visual editor**: Click and drag to draw zones
 - **Multiple zones**: Support multiple detection areas per camera
 - **Two modes**:
   - **All cameras**: Apply same zones globally
   - **Individual**: Different zones per camera
-- **Access**: Dashboard → "Zone Editor (Tapo-style)" button
+- **Access**: Dashboard → "Zone Editor (Tapway-style)" button
 
 ### 3. Retrigger Time (Cool-down)
 - **Range**: 1-30 seconds
@@ -67,8 +67,9 @@ Each camera card now includes:
 ├─────────────────────────────┤
 │ □ Streaming Enabled         │
 │ □ Chunking Enabled          │
+│ Chunk Duration: [5-15s]     │
 │                             │
-│ Tapo-style Recording        │
+│ Tapway-style Recording        │
 │ ├─ Sensitivity: [====] 100  │
 │ ├─ Retrigger:  [====] 5s    │
 │ └─ Max Clip:   [====] 300s  │
@@ -131,7 +132,7 @@ Returns: {
 
 ### Global Config (config.yaml)
 ```yaml
-# NEW: Tapo-style settings
+# NEW: Tapway-style settings
 retrigger_time: 5
 pre_record_buffer: 0
 max_clip_length: 300
@@ -224,7 +225,7 @@ streams:
 5. Done!
 
 ### Advanced Setup (5 minutes)
-1. Click "Zone Editor (Tapo-style)"
+1. Click "Zone Editor (Tapway-style)"
 2. Select camera
 3. Click "Capture Frame"
 4. Draw zones on image
@@ -242,14 +243,14 @@ streams:
 - ❌ No max clip length control
 - ❌ Basic configuration only
 
-### After (Tapo-Style Features)
+### After (Tapway-Style Features)
 - ✅ Per-camera sensitivity control
 - ✅ Visual zone drawing interface
 - ✅ Smart retrigger (continuous clips)
 - ✅ Max clip length enforcement
 - ✅ Global or individual zone modes
 - ✅ Real-time updates
-- ✅ Tapo-like user experience
+- ✅ Tapway-like user experience
 
 ## Performance Impact
 
@@ -262,7 +263,7 @@ streams:
 ## Known Limitations
 
 1. **Pre-record buffer**: Configuration ready, buffering implementation needed
-2. **Zone shapes**: Currently rectangles only (Tapo also uses rectangles)
+2. **Zone shapes**: Currently rectangles only (Tapway also uses rectangles)
 3. **Mobile**: Zone editor works best on desktop/tablet
 4. **Snapshot quality**: Uses current stream resolution
 
@@ -279,15 +280,15 @@ streams:
 
 ## Files to Review
 
-1. **Start Here**: `TAPO_QUICKSTART.md` - Quick start guide
-2. **Full Details**: `TAPO_FEATURES.md` - Complete documentation
+1. **Start Here**: `TAPWAY_QUICKSTART.md` - Quick start guide
+2. **Full Details**: `TAPWAY_FEATURES.md` - Complete documentation
 3. **Try Zone Editor**: http://localhost:5000/zone_editor
 4. **Config**: `config.yaml` - All settings stored here
 
 ## Summary
 
 You now have a **professional-grade motion detection system** with:
-- ✅ Tapo-style visual zone editor
+- ✅ Tapway-style visual zone editor
 - ✅ Per-camera sensitivity control
 - ✅ Smart retrigger (no duplicate clips)
 - ✅ Max clip length enforcement

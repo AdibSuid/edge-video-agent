@@ -1,102 +1,40 @@
-# Commercial CCTV Mode - Single Video Per Motion Event
+# Fixed-Duration Chunk Mode - Configurable Video Chunks
 
 ## Overview
-The system has been converted from chunked recording mode to commercial CCTV mode, where **each motion event is recorded as ONE continuous video file**, not split into multiple small chunks.
+The system records motion events as **fixed-duration video chunks** based on the `chunk_duration` setting (5-15 seconds). Each motion event may result in multiple chunk files depending on how long motion lasts.
 
-## What Changed
+## What This Means
 
-### Before (Chunked Mode)
-- Used `splitmuxsink` with `max-size-time=5000000000ns` (5 seconds)
-- Created new file every 5 seconds during motion
-- Motion detection resulted in many small files (e.g., 00001.mp4, 00002.mp4, 00003.mp4, etc.)
-- Had to manage "which chunks are complete" logic
-- Skipped uploading most recent chunk to avoid corruption
+### Chunk Duration Behavior
+- **chunk_duration: 8 seconds**
+  - Motion for 5 seconds → Creates 1 chunk of 8 seconds (includes padding after motion ends)
+  - Motion for 20 seconds → Creates 3 chunks: 8s, 8s, 4s
+  - Motion for 40 seconds → Creates 5 chunks: 8s, 8s, 8s, 8s, 8s
 
-### After (Commercial CCTV Mode)
-- Uses `qtmux + filesink` for direct MP4 recording
-- Records **one continuous file from motion start to motion end**
-- Motion detection creates ONE video file with timestamp (e.g., `cam1_1234567890.mp4`)
-- No chunk management needed
-- Uploads complete file after motion ends
+### Key Features
+- ✅ **Fixed chunk size**: All chunks are the configured duration (except the last chunk)
+- ✅ **Consistent file sizes**: Easy to manage and predict storage usage
+- ✅ **Easy to browse**: Shorter files are easier to scrub through
+- ✅ **Hardware accelerated**: Still uses NVENC/NVDEC for encoding/decoding
 
 ## Technical Changes
 
 ### 1. hardware_pipeline.py
-**Changes:**
-- `__init__()` now accepts `output_file` parameter
-- Removed `splitmuxsink` (which creates chunks)
-- Added `qtmux + filesink` for continuous recording
-- Removed auto-reconnect `while self.running:` loop
-- Pipeline records single file, then stops
+**Uses `splitmuxsink` for time-based splitting:**
 
-**Pipeline Before:**
 ```python
 '!', 'splitmuxsink',
-f'location={output_dir}/{self.stream_id}_%05d.mp4',
-f'max-size-time={chunk_duration_ns}',
-```
-
-**Pipeline After:**
-```python
-'!', 'qtmux',
-'faststart=true',
-'fragment-duration=1000',
-'!', 'filesink',
-f'location={self.output_file}',
-'sync=false'
+f'location={output_pattern}',
+f'max-size-time={chunk_duration_ns}',  # Split every N seconds
+'muxer-factory=qtmux',
+'async-finalize=true'
 ```
 
 ### 2. streamer.py
-**Changes:**
-- `_pipeline_manager_loop()` generates unique filename per motion event
-- Passes `output_file` parameter to `HardwarePipeline()`
-- Waits for pipeline to finish when motion ends
-- Uploads single complete file
-- Removed `_queue_new_chunks()` method (no longer needed)
-
-**Workflow:**
-1. Motion detected → Generate filename: `cam1_1234567890.mp4`
-2. Start pipeline with specific output file
-3. Pipeline records continuously while motion is active
-4. Motion ends → Stop pipeline
-5. Wait 2 seconds for GStreamer to finalize file
-6. Upload the complete motion event file
-
-## Benefits
-
-### Commercial CCTV Behavior
-✅ **One video per motion event** (like Hikvision, Dahua, etc.)
-✅ **Cleaner file management** - no need to track chunks
-✅ **Simpler upload logic** - upload one complete file
-✅ **Better user experience** - each file = one motion event
-✅ **Easier playback** - watch entire event in one video
-
-### Hardware Acceleration
-✅ **NVDEC** for RTSP stream decoding
-✅ **NVENC** for H.264 encoding
-✅ **Same hardware optimization** as before
-✅ **No performance loss** - still using GStreamer hardware pipeline
-
-## File Naming Convention
-```
-{stream_id}_{unix_timestamp}.mp4
-```
-
-Examples:
-- `cam1_1735712345.mp4` - Camera 1 motion event at timestamp 1735712345
-- `cam2_1735712456.mp4` - Camera 2 motion event at timestamp 1735712456
-- `cam3_1735712567.mp4` - Camera 3 motion event at timestamp 1735712567
-
-## Comparison with Old Version (562c924)
-
-| Feature | Old Version | Current System |
-|---------|-------------|----------------|
-| Motion Detection | ✅ Yes | ✅ Yes |
-| One File Per Event | ✅ Yes | ✅ Yes |
-| Hardware Encoding | ❌ No (CPU) | ✅ Yes (NVENC) |
-| Hardware Decoding | ❌ No (CPU) | ✅ Yes (NVDEC) |
-| GStreamer Pipeline | ❌ No (OpenCV) | ✅ Yes |
-| Performance | Good | **Excellent** |
+**Uploads all chunks from a recording session:**
+- Tracks when recording session starts
+- After motion ends + retrigger time, finds all chunks from that session
+- Uploads each chunk individually
 
 ## Testing
 

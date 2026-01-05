@@ -2,18 +2,18 @@
 
 A lightweight edge video surveillance agent that converts local CCTV streams to secure, cloud-ready video feeds with intelligent bandwidth optimization through motion detection.
 
-## � NEW: Tapo-Style Motion Detection Features
+## � NEW: Tapway-Style Motion Detection Features
 
 **Visual zone editor, per-camera sensitivity, retrigger time, and max clip length!**
 
-- 🎨 **Visual Zone Editor**: Draw detection zones like Tapo cameras
+- 🎨 **Visual Zone Editor**: Draw detection zones like Tapway cameras
 - 🎚️ **Per-Camera Sensitivity**: Fine-tune motion detection (0-255 levels)
 - ⏱️ **Retrigger Time**: Smart clip continuation (1-30 seconds)
 - 📏 **Max Clip Length**: Auto-split long recordings (30s-10min)
 - 🌍 **Global/Individual Zones**: Apply zones to all or per camera
 - 🔄 **Real-time Updates**: Changes apply instantly
 
-👉 **[Quick Start Guide](TAPO_QUICKSTART.md)** | **[Full Documentation](TAPO_FEATURES.md)** | **[Visual Guide](VISUAL_GUIDE.md)**
+👉 **[Quick Start Guide](TAPWAY_QUICKSTART.md)** | **[Full Documentation](TAPWAY_FEATURES.md)** | **[Visual Guide](VISUAL_GUIDE.md)**
 
 ## �🎯 Key Features
 
@@ -22,7 +22,7 @@ A lightweight edge video surveillance agent that converts local CCTV streams to 
 - **Motion-Triggered Adaptive FPS**: 
   - **Idle**: 1 FPS (saves ~90% bandwidth)
   - **Motion**: 25 FPS (full quality)
-- **Tapo-Style Controls**: Visual zone drawing, sensitivity sliders, retrigger time
+- **Tapway-Style Controls**: Visual zone drawing, sensitivity sliders, retrigger time
 - **Cloud Video Upload**: Automatic chunk upload with bearer token authentication
 - **Secure Streaming**: AES-256 encrypted SRT streaming to cloud
 - **Network Monitoring**: Real-time upload speed tracking

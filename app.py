@@ -259,7 +259,7 @@ def motion_page():
 
 @app.route('/zone_editor')
 def zone_editor_page():
-    """Tapo-style zone editor page"""
+    """Tapway-style zone editor page"""
     return render_template('zone_editor.html',
                          streams=config.get('streams', []),
                          config=config)
@@ -690,7 +690,7 @@ def api_settings():
 
 @app.route('/api/zone_settings', methods=['POST'])
 def api_zone_settings():
-    """Update Tapo-style zone and recording settings"""
+    """Update Tapway-style zone and recording settings"""
     try:
         data = request.json
         stream_id = data.get('stream_id')
