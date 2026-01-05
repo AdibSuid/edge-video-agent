@@ -13,7 +13,7 @@ motion_frame_skip: 2
 motion_high_fps: 25
 motion_low_fps: 1
 motion_min_area: 5000
-motion_sensitivity: 100
+motion_sensitivity: 128  # 0-255: Higher = more sensitive (inverted internally to threshold)
 motion_zones: []
 
 # Tapway-style Recording Features
@@ -29,7 +29,7 @@ streams:
   rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
   # Per-camera motion settings (Tapway-style)
-  motion_sensitivity: 100      # Override global sensitivity (0-255)
+  motion_sensitivity: 128      # 0-255: Higher = more sensitive
   motion_zones: []             # Per-camera zones (if zone_mode is "individual")
   pre_record_buffer: 0        # Per-camera pre-record buffer
 - chunk_duration: 8
@@ -40,7 +40,7 @@ streams:
   name: Camera 192.168.0.130
   rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
-  motion_sensitivity: 100
+  motion_sensitivity: 128
   motion_zones: []
   pre_record_buffer: 0
 - chunk_duration: 8
@@ -51,7 +51,7 @@ streams:
   name: Camera 192.168.0.198
   rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
-  motion_sensitivity: 100
+  motion_sensitivity: 128
   motion_zones: []
   pre_record_buffer: 0
 use_hardware_decode: true

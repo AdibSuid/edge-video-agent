@@ -13,7 +13,8 @@ class MotionDetector:
         Initialize motion detector
 
         Args:
-            sensitivity: Threshold for motion detection (0-255, lower = more sensitive)
+            sensitivity: Motion sensitivity level (0-255, higher = more sensitive)
+                        Internally inverted: 255-sensitivity gives threshold value
             min_area: Minimum contour area in pixels to count as motion
             zones: List of detection zones as [(x, y, w, h), ...]
             cooldown: Seconds to keep high FPS after last motion detected
@@ -21,7 +22,8 @@ class MotionDetector:
             blur_kernel: Gaussian blur kernel size (smaller = faster, 5 recommended)
             frame_skip: Process every Nth frame (2 = process every other frame)
         """
-        self.sensitivity = sensitivity
+        # Invert sensitivity: higher input = more sensitive = lower threshold
+        self.sensitivity = 255 - sensitivity
         self.min_area = min_area
         self.zones = zones or []
         self.cooldown = cooldown
@@ -114,10 +116,11 @@ class MotionDetector:
 
     def update_settings(self, sensitivity=None, min_area=None, zones=None, cooldown=None,
                         detection_scale=None, blur_kernel=None, frame_skip=None):
-        """Update detector settings on the fly"""
+        """Update detector settings"""
         with self.lock:
             if sensitivity is not None:
-                self.sensitivity = sensitivity
+                # Invert sensitivity: higher input = more sensitive = lower threshold
+                self.sensitivity = 255 - sensitivity
             if min_area is not None:
                 self.min_area = min_area
             if zones is not None:
