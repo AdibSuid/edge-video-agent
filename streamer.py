@@ -299,11 +299,24 @@ class Streamer:
             
             self.logger.info(f"Found {len(chunks)} chunk(s) to upload")
             
+            # Get target chunk duration for validation
+            target_duration = self.config.get('chunk_duration', 5)
+            
             for chunk_path in chunks:
                 file_size = chunk_path.stat().st_size
                 if file_size > 100000:  # Valid file (>100KB)
-                    self._queue_chunk_upload(chunk_path)
-                    self.logger.info(f"✓ Queued chunk: {chunk_path.name} ({file_size} bytes)")
+                    # Validate chunk duration before uploading
+                    if self._validate_chunk_duration(chunk_path, target_duration):
+                        self._queue_chunk_upload(chunk_path)
+                        self.logger.info(f"✓ Queued chunk: {chunk_path.name} ({file_size} bytes)")
+                    else:
+                        self.logger.warning(f"⚠ Skipping chunk with incorrect duration: {chunk_path.name}")
+                        # Optionally move to quarantine folder
+                        quarantine_dir = Path('tmp/quarantine')
+                        quarantine_dir.mkdir(parents=True, exist_ok=True)
+                        quarantine_path = quarantine_dir / chunk_path.name
+                        chunk_path.rename(quarantine_path)
+                        self.logger.info(f"Moved to quarantine: {quarantine_path}")
                 else:
                     self.logger.warning(f"⚠ Skipping small file: {chunk_path.name} ({file_size} bytes)")
                     
@@ -311,6 +324,43 @@ class Streamer:
             self.logger.error(f"Error uploading session chunks: {e}")
             import traceback
             traceback.print_exc()
+
+    def _validate_chunk_duration(self, chunk_path, target_duration):
+        """Validate that chunk duration matches the configured duration"""
+        try:
+            import subprocess
+            
+            # Get actual video duration using ffprobe
+            probe_cmd = [
+                'ffprobe', '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                str(chunk_path)
+            ]
+            
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+            if result.returncode != 0:
+                self.logger.warning(f"Could not probe duration for {chunk_path.name}")
+                return False
+            
+            actual_duration = float(result.stdout.strip())
+            
+            # Allow 1 second tolerance (e.g., 8s chunk can be 7-9 seconds)
+            tolerance = 1.0
+            min_duration = target_duration - tolerance
+            max_duration = target_duration + tolerance
+            
+            if min_duration <= actual_duration <= max_duration:
+                self.logger.debug(f"✓ Chunk duration valid: {actual_duration:.2f}s (target: {target_duration}s)")
+                return True
+            else:
+                self.logger.warning(f"✗ Chunk duration mismatch: {actual_duration:.2f}s (expected: {target_duration}±{tolerance}s)")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error validating chunk duration: {e}")
+            # If validation fails, skip the chunk to be safe
+            return False
 
     
     def _queue_chunk_upload(self, chunk_path):
