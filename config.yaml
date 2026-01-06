@@ -40,7 +40,8 @@ streams:
   name: Camera 192.168.0.130
   rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
-  motion_sensitivity: 128
+  motion_sensitivity: 30  # Much less sensitive for this camera (was 128)
+  motion_min_area: 10000  # Require larger movements (was 5000)
   motion_zones: []
   pre_record_buffer: 0
 - chunk_duration: 9
