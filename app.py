@@ -18,6 +18,7 @@ from discovery import ONVIFDiscovery, scan_network_ports
 from monitor import NetworkMonitor, TelegramNotifier
 import cloud_uploader as cloud_uploader_module
 from cloud_uploader import init_cloud_uploader
+from rest_api_client import DeepStreamRESTClient
 
 app = Flask(__name__)
 
@@ -52,6 +53,7 @@ streamers = {}  # stream_id -> Streamer instance
 network_monitor = None
 telegram_notifier = None
 discovery = ONVIFDiscovery()
+deepstream_client = None
 
 def load_config():
     """Load configuration from YAML file"""
@@ -130,6 +132,16 @@ def init_services():
         threading.Thread(target=process_upload_queue, daemon=True).start()
     else:
         print("Cloud upload disabled (configure cloud_upload_url, cloud_username, cloud_password)")
+    
+    # DeepStream REST API client
+    global deepstream_client
+    deepstream_api_url = config.get('deepstream_api_url', '')
+    if deepstream_api_url:
+        deepstream_client = DeepStreamRESTClient(deepstream_api_url)
+        print(f"DeepStream REST API enabled: {deepstream_api_url}")
+    else:
+        deepstream_client = None
+        print("DeepStream REST API disabled (configure deepstream_api_url)")
     
     # Start network quality monitor thread
     threading.Thread(target=monitor_network_quality, daemon=True).start()
@@ -224,6 +236,22 @@ def start_stream(stream):
         )
         streamers[stream_id] = streamer
         print(f"Started stream: {stream_id} - {stream['name']} -> {stream['rtsp_url']}")
+        
+        # Add to DeepStream REST API if enabled
+        if deepstream_client:
+            try:
+                result = deepstream_client.add_stream(
+                    camera_id=stream_id,
+                    camera_name=stream['name'],
+                    rtsp_url=stream['rtsp_url']
+                )
+                if result:
+                    print(f"Added stream to DeepStream: {stream_id}")
+                else:
+                    print(f"Failed to add stream to DeepStream: {stream_id}")
+            except Exception as e:
+                print(f"Error adding stream to DeepStream {stream_id}: {e}")
+                
     except Exception as e:
         print(f"Failed to start stream {stream_id}: {e}")
 
@@ -233,6 +261,24 @@ def stop_stream(stream_id):
         streamers[stream_id].stop()
         del streamers[stream_id]
         print(f"Stopped stream: {stream_id}")
+        
+        # Remove from DeepStream REST API if enabled
+        if deepstream_client:
+            # Find the stream config to get the RTSP URL
+            for stream in config.get('streams', []):
+                if stream.get('id') == stream_id:
+                    try:
+                        result = deepstream_client.remove_stream(
+                            camera_id=stream_id,
+                            rtsp_url=stream['rtsp_url']
+                        )
+                        if result:
+                            print(f"Removed stream from DeepStream: {stream_id}")
+                        else:
+                            print(f"Failed to remove stream from DeepStream: {stream_id}")
+                    except Exception as e:
+                        print(f"Error removing stream from DeepStream {stream_id}: {e}")
+                    break
 
 # ==================== Web Routes ====================
 
