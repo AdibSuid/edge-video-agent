@@ -1029,6 +1029,92 @@ def api_onvif_rtsp_uri():
         traceback.print_exc()
         return jsonify({'success': False, 'error': f'Error connecting to camera: {str(e)}'}), 500
 
+# ==================== DeepStream REST API Proxy ====================
+
+@app.route('/api/v1/stream/add', methods=['POST'])
+def proxy_deepstream_add_stream():
+    """Proxy POST requests to DeepStream REST API /api/v1/stream/add"""
+    try:
+        if not deepstream_client:
+            return jsonify({'error': 'DeepStream API not configured'}), 500
+
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        # Forward the request to DeepStream
+        result = deepstream_client._make_request("POST", "/stream/add", data)
+        if result:
+            return jsonify(result)
+        else:
+            return jsonify({'error': 'Failed to communicate with DeepStream API'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Proxy error: {str(e)}'}), 500
+
+@app.route('/api/v1/stream/remove', methods=['POST'])
+def proxy_deepstream_remove_stream():
+    """Proxy POST requests to DeepStream REST API /api/v1/stream/remove"""
+    try:
+        if not deepstream_client:
+            return jsonify({'error': 'DeepStream API not configured'}), 500
+
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No JSON data provided'}), 400
+
+        # Forward the request to DeepStream
+        result = deepstream_client._make_request("POST", "/stream/remove", data)
+        if result:
+            return jsonify(result)
+        else:
+            return jsonify({'error': 'Failed to communicate with DeepStream API'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Proxy error: {str(e)}'}), 500
+
+@app.route('/api/v1/stream/get-stream-info', methods=['GET'])
+def proxy_deepstream_get_streams():
+    """Proxy GET requests to DeepStream REST API /api/v1/stream/get-stream-info"""
+    try:
+        if not deepstream_client:
+            return jsonify({'error': 'DeepStream API not configured'}), 500
+
+        # Forward the request to DeepStream
+        result = deepstream_client._make_request("GET", "/stream/get-stream-info")
+        if result:
+            return jsonify(result)
+        else:
+            return jsonify({'error': 'Failed to communicate with DeepStream API'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Proxy error: {str(e)}'}), 500
+
+@app.route('/api/v1/health/get-dsready-state', methods=['GET'])
+def proxy_deepstream_health():
+    """Proxy GET requests to DeepStream REST API /api/v1/health/get-dsready-state"""
+    try:
+        if not deepstream_client:
+            return jsonify({'error': 'DeepStream API not configured'}), 500
+
+        # Forward the request to DeepStream
+        result = deepstream_client._make_request("GET", "/health/get-dsready-state")
+        if result:
+            return jsonify(result)
+        else:
+            return jsonify({'error': 'Failed to communicate with DeepStream API'}), 500
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Proxy error: {str(e)}'}), 500
+
 # ==================== Main ====================
 
 if __name__ == '__main__':
