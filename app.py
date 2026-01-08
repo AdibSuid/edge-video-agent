@@ -21,6 +21,14 @@ from cloud_uploader import init_cloud_uploader
 
 app = Flask(__name__)
 
+# Enable CORS for remote access
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
 # Endpoint to expose all RTSP URLs for automation (MediaMTX integration)
 @app.route('/api/streams', methods=['GET'])
 def api_streams():
@@ -73,9 +81,32 @@ def load_config():
     return config
 
 def save_config():
-    """Save configuration to YAML file"""
-    with open(config_file, 'w') as f:
-        yaml.dump(config, f, default_flow_style=False)
+    """Save configuration to YAML file with atomic write"""
+    import tempfile
+    import shutil
+
+    # Write to a temporary file first (atomic write)
+    try:
+        # Create temp file in the same directory as config_file
+        config_dir = config_file.parent
+        with tempfile.NamedTemporaryFile(mode='w', dir=config_dir, delete=False, suffix='.tmp') as tmp_file:
+            yaml.dump(config, tmp_file, default_flow_style=False)
+            tmp_path = Path(tmp_file.name)
+
+        # Make temp file readable by everyone (in case of permission issues)
+        tmp_path.chmod(0o644)
+
+        # Atomic rename (replaces old file)
+        shutil.move(str(tmp_path), str(config_file))
+
+    except Exception as e:
+        # Clean up temp file if it exists
+        if 'tmp_path' in locals() and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except:
+                pass
+        raise  # Re-raise the original exception
 
 def init_services():
     """Initialize background services"""
@@ -673,27 +704,105 @@ def api_change_camera_id():
         new_id = data.get('new_id')
         if not old_id or not new_id:
             return jsonify({'success': False, 'error': 'Missing old_id or new_id'}), 400
+
         # Check for duplicate
         for s in config.get('streams', []):
             if s['id'] == new_id:
                 return jsonify({'success': False, 'error': 'Camera ID already exists'}), 400
-        # Find and update
-        found = False
+
+        # Find the stream config
+        stream_config = None
         for s in config.get('streams', []):
             if s['id'] == old_id:
-                s['id'] = new_id
-                found = True
+                stream_config = s
                 break
-        if not found:
+
+        if not stream_config:
             return jsonify({'success': False, 'error': 'Camera not found'}), 404
-        save_config()
-        # Also update running streamer
+
+        # Stop the old streamer if running
+        was_running = False
         if old_id in streamers:
-            streamers[new_id] = streamers.pop(old_id)
-            streamers[new_id].id = new_id
+            print(f"Stopping streamer {old_id} for camera ID change...")
+            streamers[old_id].stop()
+            # Close all logger file handles to release file locks
+            streamers[old_id].cleanup_logger()
+            del streamers[old_id]
+            was_running = True
+            time.sleep(2)  # Give it time to clean up and release file handles
+
+        # Rename all related files
+        log_dir = Path('logs')
+        chunks_dir = Path('tmp/chunks')
+
+        # Rename event log file
+        old_events = log_dir / f'events_{old_id}.json'
+        new_events = log_dir / f'events_{new_id}.json'
+        if old_events.exists():
+            try:
+                old_events.rename(new_events)
+                print(f"Renamed {old_events} -> {new_events}")
+            except Exception as e:
+                print(f"Warning: Could not rename event log: {e}")
+
+        # Rename stream log file
+        old_log = log_dir / f'{old_id}.log'
+        new_log = log_dir / f'{new_id}.log'
+        if old_log.exists():
+            try:
+                old_log.rename(new_log)
+                print(f"Renamed {old_log} -> {new_log}")
+            except Exception as e:
+                print(f"Warning: Could not rename stream log: {e}")
+
+        # Rename hardware pipeline log file
+        old_hw_log = log_dir / f'hw_pipeline_{old_id}.log'
+        new_hw_log = log_dir / f'hw_pipeline_{new_id}.log'
+        if old_hw_log.exists():
+            try:
+                old_hw_log.rename(new_hw_log)
+                print(f"Renamed {old_hw_log} -> {new_hw_log}")
+            except Exception as e:
+                print(f"Warning: Could not rename hardware pipeline log: {e}")
+
+        # Rename chunk files
+        if chunks_dir.exists():
+            for chunk_file in chunks_dir.glob(f'{old_id}_*.mp4'):
+                try:
+                    # Extract timestamp from filename
+                    timestamp_part = chunk_file.name[len(old_id)+1:]  # Everything after "old_id_"
+                    new_chunk_name = f'{new_id}_{timestamp_part}'
+                    new_chunk_path = chunks_dir / new_chunk_name
+                    chunk_file.rename(new_chunk_path)
+                    print(f"Renamed {chunk_file} -> {new_chunk_path}")
+                except Exception as e:
+                    print(f"Warning: Could not rename chunk {chunk_file}: {e}")
+
+        # Update the config
+        stream_config['id'] = new_id
+        save_config()
+        print(f"Updated config: {old_id} -> {new_id}")
+
+        # Restart the streamer with new ID if it was running
+        if was_running:
+            print(f"Starting streamer with new ID: {new_id}")
+            start_stream(stream_config)
+
         return jsonify({'success': True})
+    except PermissionError as e:
+        import os
+        # Provide detailed permission information
+        error_msg = f"Permission denied: {e}"
+        print(f"Error changing camera ID: {error_msg}")
+        print(f"Current user: {os.getuid() if hasattr(os, 'getuid') else 'N/A'}")
+        print(f"Config file permissions: {oct(config_file.stat().st_mode) if config_file.exists() else 'N/A'}")
+        return jsonify({'success': False, 'error': f"{error_msg}. Run as: sudo python app.py or check file permissions."}), 500
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        import traceback
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        print(f"Error changing camera ID: {error_msg}")
+        print(traceback.format_exc())
+        return jsonify({'success': False, 'error': error_msg}), 500
 
 @app.route('/api/get_local_subnet', methods=['GET'])
 def api_get_local_subnet():

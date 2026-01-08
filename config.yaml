@@ -2,7 +2,7 @@ cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
-encoding_crf: 23
+encoding_crf: 28
 encoding_preset: ultrafast
 min_chunk_duration: 2.0
 network_hysteresis_hold_time: 10.0
@@ -17,33 +17,36 @@ motion_hysteresis_active: 2.0
 motion_hysteresis_inactive: 5.0
 motion_low_fps: 1
 motion_min_area: 5000
-motion_sensitivity: 50
+motion_sensitivity: 100
 motion_zones: []
 streams:
-- chunk_duration: 1
+- chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: Test1
-  name: Camera 192.168.1.103
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
+  id: Pantry
+  name: Camera 192.168.0.14
+  rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: Test2
-  name: Camera 192.168.1.102
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
+  id: OfficeWindow
+  name: Camera 192.168.0.130
+  rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
 - chunk_duration: 5
   chunk_fps: 2
   chunking_enabled: true
   enabled: true
-  id: Test3
-  name: Camera 192.168.1.133
-  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
+  id: OfficeEntrance
+  name: Camera 192.168.0.198
+  rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0
   streaming_enabled: true
-use_cuda_motion_detection: true
 use_hardware_decode: true
-use_hardware_encode: false
+use_hardware_encode: true
+
+# Hardware pipeline settings
+use_hardware_pipeline: true  # Enable pure GStreamer hardware pipeline
+chunk_bitrate: 2000000       # 2 Mbps

@@ -1,15 +1,9 @@
 """
-Minimal streamer implementation used by tests and runtime.
-
-This file intentionally keeps a small surface area and consistent 4-space
-indentation to avoid previous IndentationError issues. Behavior is a subset
-of the full agent: it supports SRT target construction and a simple
-dynamic-bitrate policy used by the rest of the codebase.
+Hybrid streamer: Pure GStreamer hardware pipeline + Python motion detection.
+Maximum NVDEC/NVENC utilization while keeping intelligent motion features.
 """
 
 import subprocess
-import shlex
-import shutil
 import threading
 import time
 import queue
@@ -17,26 +11,20 @@ from pathlib import Path
 import logging
 import json
 from datetime import datetime
-import os
+import cv2
+import shutil
 
-# Try to import CUDA motion detector, fallback to CPU version
-try:
-    from motion_detector_cuda import MotionDetectorCUDA as MotionDetector
-    CUDA_AVAILABLE = True
-except ImportError:
-    from motion_detector import MotionDetector
-    CUDA_AVAILABLE = False
+from motion_detector import MotionDetector
+from hardware_pipeline import HardwarePipeline
 
 
 class Streamer:
-    """Compact RTSP streamer with dynamic bitrate.
-
-    Public methods used elsewhere: set_low_quality(enabled), restart_all()
-    """
+    """Hybrid streamer with continuous hardware pipeline and motion-aware chunk management"""
 
     _instances = []
     _low_quality = False
     _lock = threading.Lock()
+<<<<<<< HEAD
     # Network adaptation hysteresis
     _network_hysteresis_hold_time = 10.0  # seconds
     _network_low_threshold = 2000000  # 2 Mbps
@@ -47,6 +35,8 @@ class Streamer:
     _ffmpeg_path = shutil.which('ffmpeg')
     # Class logger for static methods
     _logger = logging.getLogger(__name__)
+=======
+>>>>>>> f2d60f60a9d8ce1d2713282b0f4b4be0f6ca9e7a
 
     def __init__(self, rtsp_url, config, stream_id):
         self.rtsp_url = rtsp_url
@@ -55,9 +45,9 @@ class Streamer:
         self.motion_active = False
         self.frame_queue = queue.Queue(maxsize=2)
         self.running = True
-
-        # Initialize logger FIRST before using it
-        self.logger = self._setup_logger()
+        
+        # Hardware pipeline (runs independently, always encoding)
+        self.hw_pipeline = None
 
         self.detector = MotionDetector(
             sensitivity=config.get('motion_sensitivity', 25),
@@ -70,25 +60,23 @@ class Streamer:
             hysteresis_active=config.get('motion_hysteresis_active', 2.0),
             hysteresis_inactive=config.get('motion_hysteresis_inactive', 5.0),
         )
-        
-        # Log motion detector type
-        if CUDA_AVAILABLE:
-            try:
-                detector_info = self.detector.get_info()
-                self.logger.info(f"Using CUDA-accelerated motion detector: {detector_info}")
-            except:
-                self.logger.info("Using motion detector (CUDA status unknown)")
-        else:
-            self.logger.info("Using CPU motion detector")
 
-        self.default_bitrate = int(config.get('default_bitrate', 2000000))
-        self.low_bitrate = int(config.get('low_bitrate', max(400000, self.default_bitrate // 4)))
-
+        self.logger = self._setup_logger()
         self._instances.append(self)
 
-        # per-instance flag to avoid repeated missing-ffmpeg spam
-        self._ffmpeg_warned = False
+        # Check for GStreamer
+        self._gst_available = self._check_gstreamer()
+        
+        # Hardware pipeline will be started/stopped based on motion
+        # NOT started automatically anymore
+        
+        # Start motion detection thread (uses lightweight OpenCV capture)
+        threading.Thread(target=self._motion_detection_loop, daemon=True).start()
+        
+        # Start pipeline manager thread (starts/stops pipeline based on motion)
+        threading.Thread(target=self._pipeline_manager_loop, daemon=True).start()
 
+<<<<<<< HEAD
         # If ffmpeg not present at startup, start a watcher thread that will
         # poll for ffmpeg appearing on PATH and start the pipeline when found.
         if not Streamer._ffmpeg_path:
@@ -188,57 +176,30 @@ class Streamer:
 
     def _encode_chunk_hardware(self, frames, out_path, fps):
         """Encode video chunk using hardware acceleration or optimized software encoding for Jetson Orin Nano."""
+=======
+    def _check_gstreamer(self):
+        """Check GStreamer availability"""
+>>>>>>> f2d60f60a9d8ce1d2713282b0f4b4be0f6ca9e7a
         try:
-            import cv2
-            if not frames:
-                return False
-
-            h, w = frames[0].shape[:2]
-
-            # Detect platform for encoder selection
-            is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
+            result = subprocess.run(
+                ['gst-inspect-1.0', 'nvv4l2decoder'],
+                capture_output=True,
+                timeout=5
+            )
+            has_nvdec = result.returncode == 0
             
-            # Check if this is Jetson Orin Nano (which lacks NVENC hardware)
-            is_orin_nano = False
-            if is_jetson and os.path.exists('/etc/nv_tegra_release'):
-                try:
-                    with open('/etc/nv_tegra_release', 'r') as f:
-                        content = f.read()
-                        is_orin_nano = 'Orin' in content and 'Nano' in content
-                except:
-                    pass
+            result = subprocess.run(
+                ['gst-inspect-1.0', 'nvv4l2h264enc'],
+                capture_output=True,
+                timeout=5
+            )
+            has_nvenc = result.returncode == 0
             
-            # Check for NVENC availability (skip for Orin Nano)
-            has_nvenc = False
-            if not is_orin_nano:
-                try:
-                    import subprocess
-                    result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, timeout=5)
-                    has_nvenc = 'h264_nvenc' in result.stdout
-                except:
-                    has_nvenc = False
-            
-            # Select appropriate hardware encoder
-            if has_nvenc:
-                # Use NVIDIA NVENC (best performance for non-Orin Nano Jetson)
-                encoder = 'h264_nvenc'
-                encoder_opts = [
-                    '-preset', 'p1',  # Fast preset for low latency
-                    '-b:v', '2M',     # 2 Mbps bitrate
-                    '-maxrate', '2M',
-                    '-bufsize', '4M',
-                ]
-            elif is_jetson and not is_orin_nano:
-                # Use V4L2M2M for other Jetson models (not Orin Nano)
-                encoder = 'h264_v4l2m2m'
-                encoder_opts = [
-                    '-num_output_buffers', '32',
-                    '-num_capture_buffers', '16',
-                    '-b:v', '2M',
-                    '-maxrate', '2M',
-                    '-bufsize', '4M',
-                ]
+            if has_nvdec and has_nvenc:
+                self.logger.info("✓ GStreamer with NVIDIA plugins available")
+                return True
             else:
+<<<<<<< HEAD
                 # Optimized software encoding for Orin Nano and other platforms
                 # Use libx264 with GPU-accelerated processing where possible
                 encoder = 'libx264'
@@ -350,42 +311,181 @@ class Streamer:
             self.logger.info(f"✓ OpenCV encoding succeeded: {out_path.name}, size: {out_path.stat().st_size}")
             return success
 
+=======
+                self.logger.warning("⚠ GStreamer missing NVIDIA plugins")
+                return False
+>>>>>>> f2d60f60a9d8ce1d2713282b0f4b4be0f6ca9e7a
         except Exception as e:
-            self.logger.error(f"OpenCV encoding error: {e}")
+            self.logger.warning(f"⚠ GStreamer not available: {e}")
             return False
-
-    def _upload_chunk_to_cloud(self, chunk_path, chunk_id, ts_start, ts_end):
-        """Upload chunk to cloud server with authentication."""
-        try:
-            from cloud_uploader import cloud_uploader
-            
-            if cloud_uploader and cloud_uploader.enabled:
-                # Get camera name from config for stream_id
-                stream_name = self.config.get('name', self.stream_id)
-                
-                # Queue for upload (non-blocking)
-                cloud_uploader.queue_chunk(chunk_path, stream_name, ts_start, ts_end)
-                self.logger.info(f"Queued chunk for cloud upload: {chunk_path.name}")
-            else:
-                self.logger.debug(f"Cloud upload disabled or not configured")
-        except Exception as e:
-            self.logger.error(f"Error queuing chunk for upload: {e}")
 
     def _setup_logger(self):
         log_dir = Path('logs')
         log_dir.mkdir(exist_ok=True)
         logger = logging.getLogger(f'streamer-{self.stream_id}')
         logger.setLevel(logging.INFO)
-        fh = logging.FileHandler(log_dir / f'{self.stream_id}.log')
-        fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
-        logger.addHandler(fh)
+        
+        if not logger.handlers:
+            fh = logging.FileHandler(log_dir / f'{self.stream_id}.log')
+            fh.setFormatter(logging.Formatter('%(asctime)s - %(message)s'))
+            logger.addHandler(fh)
+        
         return logger
 
+    def _get_target_fps(self):
+        """Get target FPS based on motion state (required by API)"""
+        if self.motion_active:
+            return int(self.config.get('motion_high_fps', 25))
+        return int(self.config.get('motion_low_fps', 1))
+
+    def _motion_detection_loop(self):
+        """Lightweight motion detection using downscaled OpenCV capture"""
+        self.logger.info("Starting motion detection loop (lightweight CPU capture)")
+        
+        # Lightweight capture for motion detection only (downscaled, low FPS)
+        cap = cv2.VideoCapture(self.rtsp_url, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            self.logger.error("Failed to open RTSP for motion detection")
+            return
+        
+        # Minimize latency for better motion detection responsiveness
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Minimal buffer
+        cap.set(cv2.CAP_PROP_FPS, 10)  # Request 10 FPS for motion detection
+        
+        # Downscale for motion detection (saves CPU)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
+        
+        last_motion_state = False
+        frame_count = 0
+        last_log = time.time()
+        last_frame_time = time.time()
+        
+        while self.running:
+            ret, frame = cap.read()
+            if not ret:
+                time.sleep(0.1)  # Shorter retry on failure
+                continue
+            
+            frame_count += 1
+            
+            # Detect motion
+            motion = self.detector.detect(frame)
+            
+            if motion != last_motion_state:
+                self.motion_active = motion
+                status = "MOTION ACTIVE" if motion else "MOTION INACTIVE"
+                self.logger.info(f"{status}")
+                self._log_motion_event("MOTION" if motion else "IDLE", self._get_target_fps())
+                last_motion_state = motion
+            
+            # Log activity every 30 seconds
+            if time.time() - last_log > 30:
+                fps = frame_count / (time.time() - last_log + 0.001)
+                self.logger.info(f"Motion detection: {frame_count} frames analyzed ({fps:.1f} FPS)")
+                last_log = time.time()
+                frame_count = 0
+            
+            # Throttle to ~10 FPS for motion detection (better than old 5 FPS)
+            time.sleep(0.1)
+        
+        cap.release()
+        self.logger.info("Motion detection stopped")
+
+    def _pipeline_manager_loop(self):
+        """Start/stop hardware pipeline based on motion - ONE CONTINUOUS FILE per event"""
+        self.logger.info("Starting pipeline manager (motion-triggered continuous recording)")
+        
+        pipeline_running = False
+        output_dir = Path('tmp/chunks')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        current_output_file = None
+        
+        while self.running:
+            try:
+                # Check config for chunking enabled
+                chunking_enabled = self.config.get('chunking_enabled', False)
+                if not chunking_enabled:
+                    time.sleep(1)
+                    continue
+                
+                # Wait for motion
+                if not self.motion_active:
+                    # Stop pipeline if motion ended
+                    if pipeline_running:
+                        self.logger.info("⏹ Motion ended. Stopping pipeline...")
+                        
+                        # Stop the pipeline
+                        if self.hw_pipeline:
+                            self.hw_pipeline.stop()
+                            self.hw_pipeline = None
+                        pipeline_running = False
+                        
+                        # Give GStreamer time to finalize the file
+                        time.sleep(2)
+                        
+                        # Upload the complete motion event file
+                        if current_output_file and Path(current_output_file).exists():
+                            file_size = Path(current_output_file).stat().st_size
+                            if file_size > 100000:  # Valid file
+                                self._queue_chunk_upload(Path(current_output_file))
+                                self.logger.info(f"✓ Motion event saved: {current_output_file} ({file_size} bytes)")
+                            else:
+                                self.logger.warning(f"⚠ File too small: {current_output_file} ({file_size} bytes)")
+                        
+                        current_output_file = None
+                    
+                    time.sleep(0.2)
+                    continue
+                
+                # Motion is active - start pipeline for this event
+                if not pipeline_running:
+                    if self._gst_available and self.config.get('use_hardware_pipeline', True):
+                        # Generate unique filename for this motion event
+                        timestamp = int(time.time())
+                        current_output_file = str(output_dir / f'{self.stream_id}_{timestamp}.mp4')
+                        
+                        self.logger.info(f"🎬 Motion detected! Recording to: {current_output_file}")
+                        
+                        # Start hardware pipeline with specific output file
+                        self.hw_pipeline = HardwarePipeline(
+                            self.stream_id, 
+                            self.rtsp_url, 
+                            self.config,
+                            output_file=current_output_file
+                        )
+                        self.hw_pipeline.start()
+                        pipeline_running = True
+                        self.logger.info("✓ Hardware pipeline recording continuous motion event")
+                
+                time.sleep(0.5)
+                
+            except Exception as e:
+                self.logger.error(f"Pipeline manager error: {e}")
+                import traceback
+                traceback.print_exc()
+                time.sleep(5)
+    
+    def _queue_chunk_upload(self, chunk_path):
+        """Queue chunk for cloud upload"""
+        try:
+            from cloud_uploader import cloud_uploader
+            
+            if cloud_uploader and cloud_uploader.enabled:
+                # Extract timestamp from filename if possible
+                ts_start = int(chunk_path.stat().st_mtime)
+                ts_end = ts_start + int(self.config.get('chunk_duration', 5))
+                
+                stream_name = self.config.get('name', self.stream_id)
+                cloud_uploader.queue_chunk(chunk_path, stream_name, ts_start, ts_end)
+                self.logger.info(f"Queued for upload: {chunk_path.name}")
+        except Exception as e:
+            self.logger.error(f"Upload queue error: {e}")
+
     def _log_motion_event(self, status, fps):
-        """Log motion event to JSON file for event tracking"""
+        """Log motion event"""
         try:
             log_dir = Path('logs')
-            log_dir.mkdir(exist_ok=True)
             event_file = log_dir / f'events_{self.stream_id}.json'
             
             event = {
@@ -394,7 +494,6 @@ class Streamer:
                 'fps': fps
             }
             
-            # Load existing events
             events = []
             if event_file.exists():
                 try:
@@ -403,14 +502,13 @@ class Streamer:
                 except:
                     events = []
             
-            # Append new event and keep last 100 events
             events.append(event)
             events = events[-100:]
             
-            # Save back to file
             with open(event_file, 'w') as f:
                 json.dump(events, f, indent=2)
         except Exception as e:
+<<<<<<< HEAD
             self.logger.error(f"Failed to log motion event: {e}")
 
     def _get_target_bitrate(self):
@@ -497,60 +595,55 @@ class Streamer:
         except Exception:
             pass
         self._start_ffmpeg()
+=======
+            self.logger.error(f"Failed to log event: {e}")
+>>>>>>> f2d60f60a9d8ce1d2713282b0f4b4be0f6ca9e7a
 
     def update_config(self, config):
-        """Update streamer configuration and motion detector settings."""
+        """Update configuration"""
         self.config = config
         try:
             self.detector.update_settings(
                 sensitivity=config.get('motion_sensitivity'),
                 min_area=config.get('motion_min_area'),
                 zones=config.get('motion_zones'),
-                cooldown=config.get('motion_cooldown')
+                cooldown=config.get('motion_cooldown'),
+                detection_scale=config.get('motion_detection_scale'),
+                blur_kernel=config.get('motion_blur_kernel'),
+                frame_skip=config.get('motion_frame_skip')
             )
-        except Exception:
-            # If detector doesn't support update_settings, ignore
-            pass
-        # Restart pipeline to pick up bitrate/resolution changes
-        try:
-            self._restart_pipeline()
-        except Exception:
-            pass
+            self.logger.info("Configuration updated")
+        except Exception as e:
+            self.logger.warning(f"Config update failed: {e}")
 
     def stop(self):
-        """Stop the streamer gracefully: stop threads, terminate process, and unregister."""
-        # mark as not running so threads exit
+        """Stop the streamer"""
+        self.logger.info("Stopping streamer...")
         self.running = False
 
-        # terminate ffmpeg process if running
-        try:
-            if hasattr(self, 'proc') and self.proc:
-                try:
-                    self.proc.terminate()
-                    self.proc.wait(timeout=3)
-                except Exception:
-                    try:
-                        self.proc.kill()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        # Stop hardware pipeline
+        if self.hw_pipeline:
+            self.hw_pipeline.stop()
 
-        # remove from instances list
+        time.sleep(1)
+
         try:
             if self in self._instances:
                 self._instances.remove(self)
-        except Exception:
+        except:
             pass
 
-    def _capture_loop(self):
-        # lightweight capture loop used for motion detection
-        import cv2
-        import numpy as np
+        self.logger.info("✓ Streamer stopped")
 
-        use_hw_decode = self.config.get('use_hardware_decode', True)
-        is_jetson = os.path.exists('/etc/nv_tegra_release') or os.path.exists('/sys/module/tegra_fuse')
+    def cleanup_logger(self):
+        """Close all logger handlers to release file locks"""
+        if self.logger:
+            handlers = self.logger.handlers[:]
+            for handler in handlers:
+                handler.close()
+                self.logger.removeHandler(handler)
 
+<<<<<<< HEAD
         if use_hw_decode:
             # Try hardware-accelerated FFmpeg decode first
             self.logger.info(f"Starting capture loop with hardware decoding for {self.rtsp_url}")
@@ -907,8 +1000,23 @@ class Streamer:
                         pass
             else:
                 cls._logger.info("Network adaptation hysteresis cancelled: conflicting request received during hold time")
+=======
+        # Also cleanup hardware pipeline logger
+        if self.hw_pipeline and hasattr(self.hw_pipeline, 'cleanup_logger'):
+            self.hw_pipeline.cleanup_logger()
+
+    @classmethod
+    def set_low_quality(cls, enabled: bool):
+        """Set low quality mode"""
+        with cls._lock:
+            cls._low_quality = enabled
+>>>>>>> f2d60f60a9d8ce1d2713282b0f4b4be0f6ca9e7a
 
     @classmethod
     def restart_all(cls):
+        """Restart all streamers"""
         for inst in list(cls._instances):
-            inst._restart_pipeline()
+            try:
+                inst.logger.info("Config changed")
+            except:
+                pass

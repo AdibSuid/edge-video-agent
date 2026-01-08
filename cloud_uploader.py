@@ -98,46 +98,6 @@ class CloudUploader:
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Authentication error: {e}")
             return False
-        def authenticate(self) -> bool:
-            """
-            Authenticate with Samurai Inspector API and get access token
-            Returns:
-                bool: True if authentication successful
-            """
-            if not self.enabled:
-                self.logger.warning("Cloud upload not configured (missing server_url, username, or password)")
-                return False
-
-            # Samurai Inspector API auth endpoint
-            auth_url = f"{self.server_url}/auth/login"
-
-            try:
-                self.logger.info(f"Authenticating with {auth_url}...")
-                response = requests.post(
-                    auth_url,
-                    data={
-                        "username": self.username,
-                        "password": self.password
-                    },
-                    headers={"Content-Type": "application/x-www-form-urlencoded", "accept": "application/json"},
-                    timeout=10
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    self.access_token = data.get('access_token')
-                    if self.access_token:
-                        self.token_expiry = time.time() + 3600
-                        self.logger.info("Authentication successful")
-                        return True
-                    else:
-                        self.logger.error("No access_token in response")
-                        return False
-                else:
-                    self.logger.error(f"Authentication failed: {response.status_code} - {response.text}")
-                    return False
-            except requests.exceptions.RequestException as e:
-                self.logger.error(f"Authentication error: {e}")
-                return False
     
     def _ensure_authenticated(self) -> bool:
         """Ensure we have a valid token, refresh if needed"""
