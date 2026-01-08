@@ -2,7 +2,7 @@ cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
-deepstream_api_url: http://localhost:9002
+deepstream_api_url: http://47.250.210.53:9002
 encoding_crf: 28
 encoding_preset: ultrafast
 
