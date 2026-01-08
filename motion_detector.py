@@ -5,16 +5,16 @@ import time
 from threading import Lock
 
 class MotionDetector:
-    """Lightweight CPU-only motion detector using frame differencing"""
+    """Advanced CPU motion detector using MOG2 background subtraction"""
 
     def __init__(self, sensitivity=25, min_area=500, zones=None, cooldown=10,
                  detection_scale=0.25, blur_kernel=5, frame_skip=2):
         """
-        Initialize motion detector
+        Initialize motion detector with MOG2 background subtraction
 
         Args:
             sensitivity: Motion sensitivity level (0-255, higher = more sensitive)
-                        Internally inverted: 255-sensitivity gives threshold value
+                        Maps to MOG2 varThreshold parameter
             min_area: Minimum contour area in pixels to count as motion
             zones: List of detection zones as [(x, y, w, h), ...]
             cooldown: Seconds to keep high FPS after last motion detected
@@ -22,8 +22,8 @@ class MotionDetector:
             blur_kernel: Gaussian blur kernel size (smaller = faster, 5 recommended)
             frame_skip: Process every Nth frame (2 = process every other frame)
         """
-        # Invert sensitivity: higher input = more sensitive = lower threshold
-        self.sensitivity = 255 - sensitivity
+        # Map sensitivity to MOG2 parameters (higher sensitivity = lower threshold)
+        self.var_threshold = max(4, 256 - sensitivity * 2)  # 4-256 range
         self.min_area = min_area
         self.zones = zones or []
         self.cooldown = cooldown
@@ -31,14 +31,20 @@ class MotionDetector:
         self.blur_kernel = blur_kernel if blur_kernel % 2 == 1 else blur_kernel + 1  # Must be odd
         self.frame_skip = max(1, frame_skip)
         self.frame_counter = 0
-        self.prev_frame = None
         self.last_motion = 0
         self.last_motion_state = False
         self.lock = Lock()
 
+        # Initialize MOG2 background subtractor
+        self.subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,          # Number of frames to build background model
+            varThreshold=self.var_threshold,  # Threshold for foreground detection
+            detectShadows=True    # Detect shadows as foreground
+        )
+
     def detect(self, frame_bgr):
         """
-        Detect motion in frame with frame skipping optimization
+        Detect motion in frame using MOG2 background subtraction
 
         Args:
             frame_bgr: OpenCV BGR format frame
@@ -61,26 +67,21 @@ class MotionDetector:
             # Downsample for faster processing
             frame_bgr = cv2.resize(frame_bgr, (scaled_w, scaled_h), interpolation=cv2.INTER_AREA)
 
-            # Convert to grayscale and blur to reduce noise (optimized kernel size)
-            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-            gray = cv2.GaussianBlur(gray, (self.blur_kernel, self.blur_kernel), 0)
+            # Apply Gaussian blur to reduce noise
+            frame_bgr = cv2.GaussianBlur(frame_bgr, (self.blur_kernel, self.blur_kernel), 0)
 
-            # Initialize previous frame on first run
-            if self.prev_frame is None:
-                self.prev_frame = gray
-                self.last_motion_state = False
-                return False
+            # Apply MOG2 background subtraction
+            fg_mask = self.subtractor.apply(frame_bgr)
 
-            # Compute absolute difference between frames
-            frame_delta = cv2.absdiff(self.prev_frame, gray)
-            thresh = cv2.threshold(frame_delta, self.sensitivity, 255, cv2.THRESH_BINARY)[1]
-
-            # Dilate to fill in holes
-            thresh = cv2.dilate(thresh, None, iterations=2)
+            # Apply morphological operations to clean up the mask
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+            fg_mask = cv2.dilate(fg_mask, kernel, iterations=1)
 
             # Apply zones if configured
             if self.zones:
-                mask = np.zeros_like(thresh)
+                mask = np.zeros_like(fg_mask)
                 for zone in self.zones:
                     if len(zone) == 4:
                         # Convert to integers to ensure valid slice indices
@@ -91,15 +92,15 @@ class MotionDetector:
                         w = int(w * self.detection_scale)
                         h = int(h * self.detection_scale)
                         # Ensure coordinates are within bounds
-                        x = max(0, min(x, thresh.shape[1]))
-                        y = max(0, min(y, thresh.shape[0]))
-                        w = max(0, min(w, thresh.shape[1] - x))
-                        h = max(0, min(h, thresh.shape[0] - y))
+                        x = max(0, min(x, fg_mask.shape[1]))
+                        y = max(0, min(y, fg_mask.shape[0]))
+                        w = max(0, min(w, fg_mask.shape[1] - x))
+                        h = max(0, min(h, fg_mask.shape[0] - y))
                         mask[y:y+h, x:x+w] = 255
-                thresh = cv2.bitwise_and(thresh, thresh, mask=mask)
+                fg_mask = cv2.bitwise_and(fg_mask, mask)
 
-            # Find contours
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Find contours in the foreground mask
+            contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             # Check if any contour is large enough (scale min_area accordingly)
             scaled_min_area = self.min_area * (self.detection_scale ** 2)
@@ -107,8 +108,6 @@ class MotionDetector:
 
             if motion:
                 self.last_motion = time.time()
-
-            self.prev_frame = gray
 
             # Calculate motion state (motion detected or still in cooldown)
             self.last_motion_state = motion or (time.time() - self.last_motion < self.cooldown)
@@ -119,8 +118,14 @@ class MotionDetector:
         """Update detector settings"""
         with self.lock:
             if sensitivity is not None:
-                # Invert sensitivity: higher input = more sensitive = lower threshold
-                self.sensitivity = 255 - sensitivity
+                # Update MOG2 varThreshold: higher sensitivity = lower threshold
+                self.var_threshold = max(4, 256 - sensitivity * 2)
+                # Reinitialize subtractor with new threshold
+                self.subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=500,
+                    varThreshold=self.var_threshold,
+                    detectShadows=True
+                )
             if min_area is not None:
                 self.min_area = min_area
             if zones is not None:
