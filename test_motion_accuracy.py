@@ -146,7 +146,7 @@ def analyze_frame_differences(video_file):
 def main():
     """Main test function"""
     print("🎯 Testing Motion Detection Accuracy\n")
-    print("Testing frame differencing with morphological operations on known motion/no-motion videos\n")
+    print("Testing MOG2 background subtraction with noise filtering on known motion/no-motion videos\n")
 
     # First analyze raw frame differences
     print("=" * 60)
@@ -164,7 +164,7 @@ def main():
             print()
 
     print("=" * 60)
-    print("🎯 FRAME DIFFERENCING TESTS")
+    print("🎯 MOG2 BACKGROUND SUBTRACTION TESTS")
     print("=" * 60)
 
     results = []
@@ -183,7 +183,7 @@ def main():
     print("📊 FINAL RESULTS:")
 
     if all(results):
-        print("✅ ALL TESTS PASSED! Frame differencing motion detection is working correctly.")
+        print("✅ ALL TESTS PASSED! MOG2 background subtraction is working correctly.")
         print("🎉 Motion detection accurately distinguishes between motion and no-motion videos!")
         return True
     else:

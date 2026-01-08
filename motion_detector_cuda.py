@@ -13,16 +13,16 @@ logger = logging.getLogger(__name__)
 
 
 class MotionDetectorCUDA:
-    """GPU-accelerated motion detector using frame differencing with morphological operations"""
+    """GPU-accelerated motion detector using MOG2 background subtraction with noise filtering"""
 
     def __init__(self, sensitivity=25, min_area=500, zones=None, cooldown=10,
                  detection_scale=0.25, blur_kernel=5, frame_skip=2):
         """
-        Initialize CUDA-accelerated motion detector with frame differencing
+        Initialize CUDA-accelerated motion detector with MOG2 background subtraction
 
         Args:
             sensitivity: Motion sensitivity level (0-255, higher = more sensitive)
-                        Maps to frame difference threshold
+                        Maps to MOG2 varThreshold parameter
             min_area: Minimum contour area in pixels to count as motion
             zones: List of detection zones as [(x, y, w, h), ...]
             cooldown: Seconds to keep high FPS after last motion detected
@@ -30,8 +30,8 @@ class MotionDetectorCUDA:
             blur_kernel: Gaussian blur kernel size (smaller = faster, 5 recommended)
             frame_skip: Process every Nth frame (2 = process every other frame)
         """
-        # Map sensitivity to frame difference threshold (higher sensitivity = lower threshold)
-        self.diff_threshold = max(5, 50 - sensitivity * 0.2)  # 5-50 range (lower = more sensitive)
+        # Map sensitivity to MOG2 parameters (higher sensitivity = lower threshold)
+        self.var_threshold = max(10, 200 - sensitivity * 0.75)  # 10-200 range (lower = more sensitive)
         self.min_area = min_area
         self.zones = zones or []
         self.cooldown = cooldown
@@ -42,9 +42,6 @@ class MotionDetectorCUDA:
         self.last_motion = 0
         self.last_motion_state = False
         self.lock = Lock()
-
-        # Store previous frame for differencing
-        self.prev_frame = None
 
         # Check CUDA availability
         self.cuda_available = cv2.cuda.getCudaEnabledDeviceCount() > 0
@@ -70,10 +67,16 @@ class MotionDetectorCUDA:
             # Morphological element for dilation
             self.morph_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
             
-            logger.info("CUDA motion detector with frame differencing initialized successfully")
+            logger.info("CUDA motion detector with MOG2 initialized successfully")
         else:
             logger.warning("CUDA not available, falling back to CPU mode")
-            self.prev_frame = None
+
+        # Initialize MOG2 background subtractor (CPU-based but optimized)
+        self.subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,              # Longer history for better background learning
+            varThreshold=self.var_threshold,  # Variance threshold for foreground
+            detectShadows=True        # Enable shadow detection
+        )
 
     def detect(self, frame_bgr):
         """
@@ -97,7 +100,7 @@ class MotionDetectorCUDA:
                 return self._detect_cpu(frame_bgr)
 
     def _detect_cuda(self, frame_bgr):
-        """CUDA-accelerated motion detection with frame differencing"""
+        """CUDA-accelerated motion detection with MOG2 background subtraction"""
         try:
             h, w = frame_bgr.shape[:2]
             scaled_w = int(w * self.detection_scale)
@@ -111,31 +114,21 @@ class MotionDetectorCUDA:
             gpu_resized = cv2.cuda.resize(gpu_frame, (scaled_w, scaled_h),
                                          interpolation=cv2.INTER_LINEAR)
 
-            # Convert to grayscale on GPU
             gpu_gray = cv2.cuda.cvtColor(gpu_resized, cv2.COLOR_BGR2GRAY)
 
             # Apply Gaussian blur on GPU
             gpu_blurred = self.cuda_blur.apply(gpu_gray)
 
-            # Download blurred frame for frame differencing
-            current_frame = gpu_blurred.download()
+            # Download blurred frame for MOG2 processing (CPU-based background subtraction)
+            blurred_frame = gpu_blurred.download()
 
-            # Initialize motion as False if no previous frame
-            if self.prev_frame is None:
-                self.prev_frame = current_frame
-                return False
+            # Apply MOG2 background subtraction (CPU-based but optimized)
+            fg_mask = self.subtractor.apply(blurred_frame)
 
-            # Calculate absolute difference between current and previous frame
-            diff = cv2.absdiff(self.prev_frame, current_frame)
-
-            # Apply threshold to create binary motion mask
-            _, fg_mask = cv2.threshold(diff, self.diff_threshold, 255, cv2.THRESH_BINARY)
-
-            # Apply aggressive morphological operations to clean up the mask and reduce noise
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=2)
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-            fg_mask = cv2.medianBlur(fg_mask, 5)  # Additional noise reduction
+            # Apply morphological operations to clean up the mask and reduce noise
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
             # Apply zones if configured
             if self.zones:
@@ -164,9 +157,6 @@ class MotionDetectorCUDA:
             scaled_min_area = self.min_area * (self.detection_scale ** 2)
             motion = any(cv2.contourArea(c) > scaled_min_area for c in contours)
 
-            # Update previous frame for next comparison
-            self.prev_frame = current_frame
-
             if motion:
                 self.last_motion = time.time()
 
@@ -181,7 +171,7 @@ class MotionDetectorCUDA:
             return self._detect_cpu(frame_bgr)
 
     def _detect_cpu(self, frame_bgr):
-        """Fallback CPU motion detection with frame differencing"""
+        """Fallback CPU motion detection using MOG2 background subtraction"""
         h, w = frame_bgr.shape[:2]
         scaled_w = int(w * self.detection_scale)
         scaled_h = int(h * self.detection_scale)
@@ -194,25 +184,13 @@ class MotionDetectorCUDA:
         frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
         frame_gray = cv2.GaussianBlur(frame_gray, (self.blur_kernel, self.blur_kernel), 0)
 
-        # Initialize motion as False if no previous frame
-        if self.prev_frame is None:
-            self.prev_frame = frame_gray
-            return False
+        # Apply MOG2 background subtraction
+        fg_mask = self.subtractor.apply(frame_gray)
 
-        # Calculate absolute difference between current and previous frame
-        diff = cv2.absdiff(self.prev_frame, frame_gray)
-
-        # Apply threshold to create binary motion mask
-        _, fg_mask = cv2.threshold(diff, self.diff_threshold, 255, cv2.THRESH_BINARY)
-
-        # Apply aggressive morphological operations to clean up the mask and reduce noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=2)
-        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-        fg_mask = cv2.medianBlur(fg_mask, 5)  # Additional noise reduction
-
-        # Update previous frame for next comparison
-        self.prev_frame = frame_gray
+        # Apply morphological operations to clean up the mask and reduce noise
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
         # Apply zones if configured
         if self.zones:
@@ -252,8 +230,14 @@ class MotionDetectorCUDA:
         """Update detector settings on the fly"""
         with self.lock:
             if sensitivity is not None:
-                # Update frame difference threshold: higher sensitivity = lower threshold
-                self.diff_threshold = max(5, 50 - sensitivity * 0.2)
+                # Update MOG2 varThreshold: higher sensitivity = lower threshold
+                self.var_threshold = max(10, 200 - sensitivity * 0.75)
+                # Reinitialize subtractor with new threshold
+                self.subtractor = cv2.createBackgroundSubtractorMOG2(
+                    history=500,
+                    varThreshold=self.var_threshold,
+                    detectShadows=True
+                )
             if min_area is not None:
                 self.min_area = min_area
             if zones is not None:

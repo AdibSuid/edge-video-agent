@@ -22,7 +22,7 @@ A lightweight edge video surveillance agent that converts local CCTV streams to 
 - **Motion-Triggered Adaptive FPS**: 
   - **Idle**: 1 FPS (saves ~90% bandwidth)
   - **Motion**: 25 FPS (full quality)
-- **Advanced Motion Detection**: Frame differencing with morphological operations for robust, low-latency detection
+- **Advanced Motion Detection**: MOG2 background subtraction with noise filtering for robust, adaptive detection
 - **Tapway-Style Controls**: Visual zone drawing, sensitivity sliders, retrigger time
 - **Cloud Video Upload**: Automatic chunk upload with bearer token authentication
 - **Secure Streaming**: AES-256 encrypted SRT streaming to cloud

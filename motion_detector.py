@@ -5,16 +5,16 @@ import time
 from threading import Lock
 
 class MotionDetector:
-    """Advanced CPU motion detector using frame differencing with morphological operations"""
+    """CPU motion detector using MOG2 background subtraction with noise filtering"""
 
     def __init__(self, sensitivity=25, min_area=500, zones=None, cooldown=10,
                  detection_scale=0.25, blur_kernel=5, frame_skip=2):
         """
-        Initialize motion detector with frame differencing and morphological operations
+        Initialize motion detector with MOG2 background subtraction
 
         Args:
             sensitivity: Motion sensitivity level (0-255, higher = more sensitive)
-                        Maps to frame difference threshold
+                        Maps to MOG2 varThreshold parameter
             min_area: Minimum contour area in pixels to count as motion
             zones: List of detection zones as [(x, y, w, h), ...]
             cooldown: Seconds to keep high FPS after last motion detected
@@ -22,8 +22,8 @@ class MotionDetector:
             blur_kernel: Gaussian blur kernel size (smaller = faster, 5 recommended)
             frame_skip: Process every Nth frame (2 = process every other frame)
         """
-        # Map sensitivity to frame difference threshold (higher sensitivity = lower threshold)
-        self.diff_threshold = max(5, 50 - sensitivity * 0.2)  # 5-50 range (lower = more sensitive)
+        # Map sensitivity to MOG2 parameters (higher sensitivity = lower threshold)
+        self.var_threshold = max(10, 200 - sensitivity * 0.75)  # 10-200 range (lower = more sensitive)
         self.min_area = min_area
         self.zones = zones or []
         self.cooldown = cooldown
@@ -35,12 +35,16 @@ class MotionDetector:
         self.last_motion_state = False
         self.lock = Lock()
 
-        # Store previous frame for differencing
-        self.prev_frame = None
+        # Initialize MOG2 background subtractor
+        self.subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,              # Longer history for better background learning
+            varThreshold=self.var_threshold,  # Variance threshold for foreground
+            detectShadows=True        # Enable shadow detection
+        )
 
     def detect(self, frame_bgr):
         """
-        Detect motion in frame using frame differencing with morphological operations
+        Detect motion in frame using MOG2 background subtraction with noise filtering
 
         Args:
             frame_bgr: OpenCV BGR format frame
@@ -67,22 +71,13 @@ class MotionDetector:
             frame_gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
             frame_gray = cv2.GaussianBlur(frame_gray, (self.blur_kernel, self.blur_kernel), 0)
 
-            # Initialize motion as False if no previous frame
-            if self.prev_frame is None:
-                self.prev_frame = frame_gray
-                return False
-
-            # Calculate absolute difference between current and previous frame
-            diff = cv2.absdiff(self.prev_frame, frame_gray)
-
-            # Apply threshold to create binary motion mask
-            _, fg_mask = cv2.threshold(diff, self.diff_threshold, 255, cv2.THRESH_BINARY)
+            # Apply MOG2 background subtraction
+            fg_mask = self.subtractor.apply(frame_gray)
 
             # Apply morphological operations to clean up the mask and reduce noise
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=2)
-            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
-            fg_mask = cv2.medianBlur(fg_mask, 5)  # Additional noise reduction
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+            fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_CLOSE, kernel, iterations=1)
 
             # Apply zones if configured
             if self.zones:
@@ -110,9 +105,6 @@ class MotionDetector:
             # Check if any contour is large enough (scale min_area accordingly)
             scaled_min_area = self.min_area * (self.detection_scale ** 2)
             motion = any(cv2.contourArea(c) > scaled_min_area for c in contours)
-
-            # Update previous frame for next comparison
-            self.prev_frame = frame_gray
 
             if motion:
                 self.last_motion = time.time()
