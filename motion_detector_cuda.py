@@ -128,8 +128,9 @@ class MotionDetectorCUDA:
             # Download threshold image for contour detection (required on CPU)
             thresh = gpu_thresh.download()
 
-            # Dilate to fill in holes (CPU operation, but small image)
-            thresh = cv2.dilate(thresh, self.morph_kernel, iterations=2)
+            # Simple noise filtering: remove small isolated pixels
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
 
             # Apply zones if configured
             if self.zones:
@@ -199,10 +200,9 @@ class MotionDetectorCUDA:
         thresh = cv2.threshold(frame_delta, self.sensitivity, 255, 
                               cv2.THRESH_BINARY)[1]
 
-        # Dilate to fill in holes
-        thresh = cv2.dilate(thresh, None, iterations=2)
-
-        # Apply zones if configured
+        # Simple noise filtering: remove small isolated pixels
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        thresh = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)        # Apply zones if configured
         if self.zones:
             mask = np.zeros_like(thresh)
             for zone in self.zones:
