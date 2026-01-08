@@ -291,10 +291,16 @@ class ONVIFDiscovery:
                     })
                     
                     rtsp_url = str(uri.Uri)
-                    
+
+                    # Extract port from the original RTSP URL
+                    rtsp_port = 554  # Default RTSP port
+                    port_match = re.search(r':(\d+)/', rtsp_url)
+                    if port_match:
+                        rtsp_port = int(port_match.group(1))
+
                     # Extract suffix and build complete URL with credentials
                     suffix = self._extract_rtsp_suffix(rtsp_url)
-                    complete_url = self._build_rtsp_url(ip, user, password, suffix)
+                    complete_url = self._build_rtsp_url(ip, user, password, suffix, rtsp_port)
                     
                     stream_uris.append(complete_url)
                     
