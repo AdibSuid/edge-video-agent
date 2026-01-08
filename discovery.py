@@ -291,16 +291,21 @@ class ONVIFDiscovery:
                     })
                     
                     rtsp_url = str(uri.Uri)
+                    print(f"[ONVIF] Original RTSP URL from camera: {rtsp_url}")
 
                     # Extract port from the original RTSP URL
                     rtsp_port = 554  # Default RTSP port
                     port_match = re.search(r':(\d+)/', rtsp_url)
                     if port_match:
                         rtsp_port = int(port_match.group(1))
+                    print(f"[ONVIF] Extracted RTSP port: {rtsp_port}")
 
                     # Extract suffix and build complete URL with credentials
                     suffix = self._extract_rtsp_suffix(rtsp_url)
+                    print(f"[ONVIF] Extracted RTSP path suffix: '{suffix}'")
+
                     complete_url = self._build_rtsp_url(ip, user, password, suffix, rtsp_port)
+                    print(f"[ONVIF] Built complete URL: rtsp://{user}:***@{ip}:{rtsp_port}{('/' + suffix) if suffix else ''}")
                     
                     stream_uris.append(complete_url)
                     
@@ -442,22 +447,26 @@ class ONVIFDiscovery:
     def _extract_rtsp_suffix(self, rtsp_url):
         """Extract the suffix/path from full RTSP URL"""
         import re
-        
+
         # Remove credentials if present
         url = re.sub(r'rtsp://[^@]+@', 'rtsp://', rtsp_url)
-        
+
         # Extract path after IP:PORT
         match = re.search(r'rtsp://[^/]+/(.+)', url)
         if match:
             return match.group(1)
-        
-        # Return original URL if pattern not matched
-        return rtsp_url
+
+        # Check if there's a trailing slash but no path
+        if url.endswith('/'):
+            return ''
+
+        # No path found - return empty string (will be handled in _build_rtsp_url)
+        return ''
     
     def _build_rtsp_url(self, ip, username, password, suffix, port=554):
         """Build complete RTSP URL with credentials"""
         import re
-        
+
         # Handle suffix that might already contain port
         if suffix.startswith('rtsp://'):
             # Extract port if present in suffix
@@ -466,11 +475,14 @@ class ONVIFDiscovery:
                 port = int(port_match.group(1))
             # Extract just the path
             suffix = self._extract_rtsp_suffix(suffix)
-        
-        # Ensure suffix starts with /
-        if not suffix.startswith('/'):
+
+        # Ensure suffix starts with / (if not empty)
+        if suffix and not suffix.startswith('/'):
             suffix = '/' + suffix
-        
+        elif not suffix:
+            # No path - just use root
+            suffix = ''
+
         # Build URL with credentials
         return f"rtsp://{username}:{password}@{ip}:{port}{suffix}"
 
