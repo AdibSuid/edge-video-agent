@@ -1,0 +1,29 @@
+# MediaMTX configuration for RTSP relay
+# This allows cloud DeepStream to access local camera streams
+
+# RTSP server settings
+rtspAddress: :8554
+rtmpAddress: :1935
+hlsAddress: :8888
+webrtcAddress: :8889
+
+# Enable authentication (optional)
+authMethod: internal
+
+# Log level
+logLevel: info
+
+# Performance settings
+readTimeout: 10s
+writeTimeout: 10s
+readBufferCount: 512
+
+# Path settings - define camera streams
+paths:
+  # Streams will be dynamically added via API
+  # Format: /{stream_id}
+  all:
+    source: publisher
+    # sourceOnDemand: yes
+    # sourceOnDemandStartTimeout: 10s
+    # sourceOnDemandCloseAfter: 10s

@@ -19,6 +19,7 @@ from monitor import NetworkMonitor, TelegramNotifier
 import cloud_uploader as cloud_uploader_module
 from cloud_uploader import init_cloud_uploader
 from rest_api_client import DeepStreamRESTClient
+from rtsp_relay_manager import RTSPRelayManager
 
 app = Flask(__name__)
 
@@ -54,6 +55,7 @@ network_monitor = None
 telegram_notifier = None
 discovery = ONVIFDiscovery()
 deepstream_client = None
+rtsp_relay = None
 
 def load_config():
     """Load configuration from YAML file"""
@@ -134,13 +136,18 @@ def init_services():
         print("Cloud upload disabled (configure cloud_upload_url, cloud_username, cloud_password)")
     
     # DeepStream REST API client
-    global deepstream_client
+    global deepstream_client, rtsp_relay
     deepstream_api_url = config.get('deepstream_api_url', '')
     if deepstream_api_url:
         deepstream_client = DeepStreamRESTClient(deepstream_api_url)
         print(f"DeepStream REST API enabled: {deepstream_api_url}")
+
+        # Initialize RTSP relay for cloud access
+        rtsp_relay = RTSPRelayManager(config)
+        print("RTSP Relay Manager initialized")
     else:
         deepstream_client = None
+        rtsp_relay = None
         print("DeepStream REST API disabled (configure deepstream_api_url)")
     
     # Start network quality monitor thread
@@ -236,21 +243,37 @@ def start_stream(stream):
         )
         streamers[stream_id] = streamer
         print(f"Started stream: {stream_id} - {stream['name']} -> {stream['rtsp_url']}")
-        
+
         # Add to DeepStream REST API if enabled
-        if deepstream_client:
+        if deepstream_client and rtsp_relay:
             try:
-                result = deepstream_client.add_stream(
-                    camera_id=stream_id,
-                    camera_name=stream['name'],
-                    rtsp_url=stream['rtsp_url']
-                )
-                if result:
-                    print(f"Added stream to DeepStream: {stream_id}")
+                # Start RTSP relay to make local stream accessible from cloud
+                relay_started = rtsp_relay.start_relay(stream_id, stream['rtsp_url'])
+
+                if relay_started:
+                    # Get public RTSP URL for DeepStream
+                    public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+
+                    # Add stream to DeepStream using public URL
+                    result = deepstream_client.add_stream(
+                        camera_id=stream_id,
+                        camera_name=stream['name'],
+                        rtsp_url=public_rtsp_url  # Use public URL instead of local
+                    )
+
+                    if result:
+                        print(f"✓ Added stream to DeepStream: {stream_id}")
+                        print(f"  Public URL: {public_rtsp_url}")
+                    else:
+                        print(f"✗ Failed to add stream to DeepStream: {stream_id}")
+                        rtsp_relay.stop_relay(stream_id)  # Clean up relay
                 else:
-                    print(f"Failed to add stream to DeepStream: {stream_id}")
+                    print(f"✗ Failed to start RTSP relay for {stream_id}")
+
             except Exception as e:
                 print(f"Error adding stream to DeepStream {stream_id}: {e}")
+                import traceback
+                traceback.print_exc()
                 
     except Exception as e:
         print(f"Failed to start stream {stream_id}: {e}")
@@ -261,21 +284,30 @@ def stop_stream(stream_id):
         streamers[stream_id].stop()
         del streamers[stream_id]
         print(f"Stopped stream: {stream_id}")
-        
+
         # Remove from DeepStream REST API if enabled
-        if deepstream_client:
+        if deepstream_client and rtsp_relay:
             # Find the stream config to get the RTSP URL
             for stream in config.get('streams', []):
                 if stream.get('id') == stream_id:
                     try:
+                        # Get the public URL that was used
+                        public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+
+                        # Remove from DeepStream
                         result = deepstream_client.remove_stream(
                             camera_id=stream_id,
-                            rtsp_url=stream['rtsp_url']
+                            rtsp_url=public_rtsp_url
                         )
+
                         if result:
-                            print(f"Removed stream from DeepStream: {stream_id}")
+                            print(f"✓ Removed stream from DeepStream: {stream_id}")
                         else:
-                            print(f"Failed to remove stream from DeepStream: {stream_id}")
+                            print(f"✗ Failed to remove stream from DeepStream: {stream_id}")
+
+                        # Stop RTSP relay
+                        rtsp_relay.stop_relay(stream_id)
+
                     except Exception as e:
                         print(f"Error removing stream from DeepStream {stream_id}: {e}")
                     break
@@ -285,7 +317,7 @@ def stop_stream(stream_id):
 @app.route('/')
 def index():
     """Dashboard page"""
-    return render_template('index.html', 
+    return render_template('dashboard.html',
                          streams=config.get('streams', []),
                          config=config)
 
@@ -293,15 +325,6 @@ def index():
 def discover_page():
     """ONVIF discovery page"""
     return render_template('discover.html')
-
-@app.route('/motion')
-def motion_page():
-    """Motion settings page"""
-    return render_template('motion.html',
-                         sensitivity=config.get('motion_sensitivity', 25),
-                         min_area=config.get('motion_min_area', 500),
-                         cooldown=config.get('motion_cooldown', 10),
-                         zones=config.get('motion_zones', []))
 
 @app.route('/zone_editor')
 def zone_editor_page():
@@ -651,41 +674,51 @@ def api_cloud_upload_status():
         return jsonify(status)
     return jsonify({'enabled': False, 'authenticated': False, 'queue_size': 0})
 
-@app.route('/api/save_zones', methods=['POST'])
-def api_save_zones():
-    """Save motion detection zones"""
+@app.route('/api/stream_push_status')
+def api_stream_push_status():
+    """Get DeepStream stream pushing status"""
     try:
-        data = request.json
-        zones = [[z['x'], z['y'], z['w'], z['h']] for z in data['zones']]
-        
-        config['motion_zones'] = zones
-        save_config()
-        
-        # Update all streamers
-        Streamer.restart_all()
-        
-        return jsonify({'success': True})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        if not deepstream_client:
+            return jsonify({
+                'enabled': False,
+                'connected': False,
+                'stream_count': 0,
+                'streams': []
+            })
 
-@app.route('/api/save_motion_config', methods=['POST'])
-def api_save_motion_config():
-    """Save motion detection configuration"""
-    try:
-        data = request.json
-        
-        config['motion_sensitivity'] = int(data['sensitivity'])
-        config['motion_min_area'] = int(data['min_area'])
-        config['motion_cooldown'] = int(data['cooldown'])
-        save_config()
-        
-        # Update all streamers
-        for streamer in streamers.values():
-            streamer.update_config(config)
-        
-        return jsonify({'success': True})
+        # Check health
+        health = deepstream_client.check_health()
+        connected = health is not None and health.get('DSReady', False)
+
+        # Get active streams
+        stream_info = deepstream_client.get_streams()
+        stream_count = 0
+        streams = []
+
+        if stream_info and 'message' in stream_info:
+            message = stream_info['message']
+            if 'stream_info' in message:
+                streams = message['stream_info']
+                stream_count = len(streams)
+
+        return jsonify({
+            'enabled': True,
+            'connected': connected,
+            'stream_count': stream_count,
+            'streams': streams
+        })
+
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+        print(f"Error getting stream push status: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'enabled': True,
+            'connected': False,
+            'stream_count': 0,
+            'streams': [],
+            'error': str(e)
+        })
 
 @app.route('/api/get_motion_events')
 def api_get_motion_events():

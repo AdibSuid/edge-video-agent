@@ -1,0 +1,324 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - TapView Agent{% endblock %}
+
+{% block page_title %}
+    <i class="fas fa-th-large"></i> Dashboard
+{% endblock %}
+
+{% block content %}
+<!-- Stats Cards -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon primary">
+                <i class="fas fa-camera"></i>
+            </div>
+            <div class="stat-card-content">
+                <h3 id="activeStreams">0</h3>
+                <p>Active Cameras</p>
+            </div>
+        </div>
+        <div class="stat-card-footer">
+            <span class="stat-badge success" id="streamingBadge">
+                <i class="fas fa-circle"></i> Streaming
+            </span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon success">
+                <i class="fas fa-running"></i>
+            </div>
+            <div class="stat-card-content">
+                <h3 id="motionStreams">0</h3>
+                <p>Motion Detected</p>
+            </div>
+        </div>
+        <div class="stat-card-footer">
+            <span class="stat-badge secondary">
+                <i class="fas fa-video"></i> <span id="motionStatusText">Monitoring</span>
+            </span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon info">
+                <i class="fas fa-cloud-upload-alt"></i>
+            </div>
+            <div class="stat-card-content">
+                <h3 id="cloudUploadQueue">0</h3>
+                <p>Upload Queue</p>
+            </div>
+        </div>
+        <div class="stat-card-footer">
+            <span class="stat-badge secondary" id="cloudUploadStatus">
+                <i class="fas fa-circle"></i> Checking...
+            </span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-card-header">
+            <div class="stat-icon warning">
+                <i class="fas fa-broadcast-tower"></i>
+            </div>
+            <div class="stat-card-content">
+                <h3 id="streamPushCount">0</h3>
+                <p>DeepStream Streams</p>
+            </div>
+        </div>
+        <div class="stat-card-footer">
+            <span class="stat-badge secondary" id="streamPushStatus">
+                <i class="fas fa-circle"></i> Checking...
+            </span>
+        </div>
+    </div>
+</div>
+
+<!-- Camera Grid -->
+<div class="section-header" style="margin-bottom: 20px;">
+    <h5 style="color: var(--text-primary); font-weight: 600; display: flex; align-items: center; gap: 12px;">
+        <i class="fas fa-video"></i>
+        Live Cameras
+        <span style="font-size: 14px; color: var(--text-muted); font-weight: 400;">(<span id="cameraCount">0</span> cameras)</span>
+    </h5>
+</div>
+
+<div class="camera-grid" id="cameraGrid">
+    {% if streams %}
+        {% for stream in streams %}
+        <div class="camera-card" id="camera-{{ stream.id }}" data-camera-id="{{ stream.id }}">
+            <div class="camera-preview">
+                <img src="/api/stream_proxy?rtsp_url={{ stream.rtsp_url|urlencode }}&t={{ range(1000000)|random }}"
+                     alt="{{ stream.name }}"
+                     onerror="this.src='/static/img/no-signal.jpg'">
+                <div class="camera-status-overlay">
+                    <span class="status-badge idle motion-status-badge">
+                        <i class="fas fa-circle"></i> Idle
+                    </span>
+                    <span class="status-badge live">
+                        <i class="fas fa-circle"></i> LIVE
+                    </span>
+                </div>
+            </div>
+
+            <div class="camera-info">
+                <div class="camera-name">
+                    <i class="fas fa-video"></i>
+                    {{ stream.name }}
+                </div>
+                <div class="camera-id">ID: {{ stream.id }}</div>
+
+                <div class="camera-stats">
+                    <div class="stat-item">
+                        <i class="fas fa-film"></i>
+                        <span class="camera-fps">1 fps</span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-clock"></i>
+                        <span class="camera-uptime">Active</span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-hdd"></i>
+                        <span class="camera-storage">
+                            {% if stream.chunking_enabled %}Recording{% else %}Idle{% endif %}
+                        </span>
+                    </div>
+                    <div class="stat-item">
+                        <i class="fas fa-signal"></i>
+                        <span class="camera-quality">Good</span>
+                    </div>
+                </div>
+
+                <!-- Camera Settings -->
+                <div class="camera-settings-header" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+                    <button class="btn-settings-toggle" onclick="toggleSettings('{{ stream.id }}'); return false;">
+                        <i class="fas fa-cog"></i> Settings
+                        <i class="fas fa-chevron-down toggle-icon"></i>
+                    </button>
+                </div>
+                <div class="camera-settings" id="settings-{{ stream.id }}" style="display: none; margin-top: 8px;">
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="streamingEnabled-{{ stream.id }}"
+                               {% if stream.streaming_enabled %}checked{% endif %}
+                               onchange="updateStreamSetting('{{ stream.id }}', 'streaming_enabled', this.checked)">
+                        <label class="form-check-label" for="streamingEnabled-{{ stream.id }}" style="font-size: 13px; color: var(--text-secondary);">
+                            Streaming Enabled
+                        </label>
+                    </div>
+                    <div class="form-check form-switch mb-2">
+                        <input class="form-check-input" type="checkbox" id="chunkingEnabled-{{ stream.id }}"
+                               {% if stream.chunking_enabled %}checked{% endif %}
+                               onchange="updateStreamSetting('{{ stream.id }}', 'chunking_enabled', this.checked)">
+                        <label class="form-check-label" for="chunkingEnabled-{{ stream.id }}" style="font-size: 13px; color: var(--text-secondary);">
+                            Chunking Enabled
+                        </label>
+                    </div>
+                    <div class="mb-2">
+                        <label for="chunkDuration-{{ stream.id }}" class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+                            Chunk Duration: <span id="chunkValue-{{ stream.id }}" style="color: var(--primary-color); font-weight: 600;">{{ stream.chunk_duration|default(5) }}</span>s
+                        </label>
+                        <input type="range" class="form-range" min="5" max="15" step="1"
+                            id="chunkDuration-{{ stream.id }}"
+                            value="{{ stream.chunk_duration|default(5) }}"
+                            oninput="document.getElementById('chunkValue-{{ stream.id }}').textContent=this.value"
+                            onchange="updateStreamSetting('{{ stream.id }}', 'chunk_duration', parseInt(this.value))"
+                            style="height: 4px;">
+                    </div>
+                    <div class="mb-2">
+                        <label for="chunkFps-{{ stream.id }}" class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+                            Chunk FPS (1-4):
+                        </label>
+                        <input type="number" class="form-control form-control-sm" min="1" max="4"
+                               id="chunkFps-{{ stream.id }}" value="{{ stream.chunk_fps|default(2) }}"
+                               onchange="updateStreamSetting('{{ stream.id }}', 'chunk_fps', parseInt(this.value))"
+                               style="background: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 4px 8px; font-size: 13px;">
+                    </div>
+                    <div class="mb-2">
+                        <label for="sensitivity-{{ stream.id }}" class="form-label" style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">
+                            Sensitivity: <span id="sensValue-{{ stream.id }}" style="color: var(--primary-color); font-weight: 600;">{{ stream.motion_sensitivity|default(100) }}</span>
+                        </label>
+                        <input type="range" class="form-range" min="0" max="255"
+                            id="sensitivity-{{ stream.id }}"
+                            value="{{ stream.motion_sensitivity|default(100) }}"
+                            oninput="document.getElementById('sensValue-{{ stream.id }}').textContent=this.value"
+                            onchange="updateStreamSetting('{{ stream.id }}', 'motion_sensitivity', parseInt(this.value))"
+                            style="height: 4px;">
+                    </div>
+                </div>
+
+                <div class="camera-actions" style="margin-top: 12px;">
+                    <button class="btn-camera-action" onclick="viewCameraFull('{{ stream.id }}')">
+                        <i class="fas fa-expand"></i> View
+                    </button>
+                    <button class="btn-camera-action" onclick="toggleStream('{{ stream.id }}', this)"
+                            data-enabled="{{ stream.enabled|default(true)|string|lower }}">
+                        <i class="fas fa-power-off"></i>
+                        {% if stream.enabled|default(true) %}Disable{% else %}Enable{% endif %}
+                    </button>
+                    <button class="btn-camera-action danger" onclick="removeStream('{{ stream.id }}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state" style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
+            <i class="fas fa-video-slash" style="font-size: 64px; color: var(--text-muted); margin-bottom: 20px;"></i>
+            <h4 style="color: var(--text-primary); margin-bottom: 12px;">No Cameras Configured</h4>
+            <p style="color: var(--text-muted); margin-bottom: 24px;">Add your first camera to get started</p>
+            <a href="/discover" class="btn-primary-custom">
+                <i class="fas fa-plus"></i> Discover Cameras
+            </a>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Full View Modal -->
+<div class="modal fade" id="cameraFullViewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="fullViewCameraName">
+                    <i class="fas fa-video"></i> Camera View
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="padding: 0; background: #000;">
+                <img id="fullViewImage" src="" style="width: 100%; height: auto;" alt="Camera Stream">
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script>
+// Camera count
+document.getElementById('cameraCount').textContent = {{ streams|length }};
+
+// View camera in full screen
+function viewCameraFull(streamId) {
+    const camera = document.querySelector(`[data-camera-id="${streamId}"]`);
+    if (!camera) return;
+
+    const cameraName = camera.querySelector('.camera-name').textContent.trim();
+    const cameraImg = camera.querySelector('.camera-preview img');
+
+    document.getElementById('fullViewCameraName').innerHTML = `<i class="fas fa-video"></i> ${cameraName}`;
+    document.getElementById('fullViewImage').src = cameraImg.src;
+
+    const modal = new bootstrap.Modal(document.getElementById('cameraFullViewModal'));
+    modal.show();
+}
+
+// Settings modal
+function showSettingsModal() {
+    const modal = new bootstrap.Modal(document.getElementById('settingsModal'));
+    modal.show();
+}
+
+// Update streams from window.streams
+window.streams = {{ streams|tojson }};
+
+// Toggle camera settings
+function toggleSettings(streamId) {
+    const settingsDiv = document.getElementById('settings-' + streamId);
+    const toggleIcon = event.currentTarget.querySelector('.toggle-icon');
+
+    if (settingsDiv.style.display === 'none') {
+        settingsDiv.style.display = 'block';
+        toggleIcon.style.transform = 'rotate(180deg)';
+    } else {
+        settingsDiv.style.display = 'none';
+        toggleIcon.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Update stream setting
+function updateStreamSetting(streamId, key, value) {
+    fetch('/api/settings', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            streams: window.streams.map(s => {
+                if (s.id === streamId) {
+                    // Handle different types
+                    if (['chunk_duration', 'chunk_fps', 'motion_sensitivity', 'pre_record_buffer'].includes(key)) {
+                        s[key] = parseInt(value);
+                    } else {
+                        s[key] = value;
+                    }
+                }
+                return s;
+            })
+        })
+    }).then(r => r.json()).then(d => {
+        if (d.success) {
+            showNotification(`${key.replace(/_/g, ' ')} updated`, 'success');
+
+            // Update the storage status if chunking was toggled
+            if (key === 'chunking_enabled') {
+                const card = document.querySelector(`[data-camera-id="${streamId}"]`);
+                if (card) {
+                    const storageSpan = card.querySelector('.camera-storage');
+                    if (storageSpan) {
+                        storageSpan.textContent = value ? 'Recording' : 'Idle';
+                    }
+                }
+            }
+        } else {
+            showNotification('Failed to update: ' + (d.error || 'Unknown error'), 'danger');
+        }
+    }).catch(err => {
+        showNotification('Error: ' + err.message, 'danger');
+    });
+}
+</script>
+{% endblock %}

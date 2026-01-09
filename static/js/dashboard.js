@@ -172,10 +172,10 @@ async function updateCloudUploadStatus() {
     try {
         const response = await fetch('/api/cloud_upload_status');
         const data = await response.json();
-        
+
         const statusElement = document.getElementById('cloudUploadStatus');
         const queueElement = document.getElementById('cloudUploadQueue');
-        
+
         if (statusElement) {
             if (data.enabled && data.authenticated) {
                 statusElement.className = 'badge bg-success';
@@ -188,13 +188,44 @@ async function updateCloudUploadStatus() {
                 statusElement.textContent = 'Disabled';
             }
         }
-        
+
         if (queueElement) {
             queueElement.textContent = data.queue_size || 0;
         }
-        
+
     } catch (error) {
         console.error('Failed to update cloud upload status:', error);
+    }
+}
+
+// Update stream push status (DeepStream)
+async function updateStreamPushStatus() {
+    try {
+        const response = await fetch('/api/stream_push_status');
+        const data = await response.json();
+
+        const statusElement = document.getElementById('streamPushStatus');
+        const countElement = document.getElementById('streamPushCount');
+
+        if (statusElement) {
+            if (data.enabled && data.connected) {
+                statusElement.className = 'badge bg-success';
+                statusElement.textContent = 'Connected';
+            } else if (data.enabled && !data.connected) {
+                statusElement.className = 'badge bg-danger';
+                statusElement.textContent = 'Disconnected';
+            } else {
+                statusElement.className = 'badge bg-secondary';
+                statusElement.textContent = 'Disabled';
+            }
+        }
+
+        if (countElement) {
+            countElement.textContent = data.stream_count || 0;
+        }
+
+    } catch (error) {
+        console.error('Failed to update stream push status:', error);
     }
 }
 
@@ -263,3 +294,9 @@ async function toggleStream(streamId, button) {
 
 // Start polling for cloud upload status
 setInterval(updateCloudUploadStatus, 5000);
+
+// Start polling for stream push status
+setInterval(updateStreamPushStatus, 5000);
+// Initial update
+updateCloudUploadStatus();
+updateStreamPushStatus();

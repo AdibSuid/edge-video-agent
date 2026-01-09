@@ -1,12 +1,13 @@
+chunk_bitrate: 2000000
 cloud_password: tapwaysuperadmin
 cloud_upload_enabled: true
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
 deepstream_api_url: http://47.250.210.53:9002
+edge_public_domain: ''
+edge_public_ip: ''
 encoding_crf: 28
 encoding_preset: ultrafast
-
-# Tapway-style Motion Detection Settings (Global defaults)
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 1.0
@@ -14,49 +15,36 @@ motion_frame_skip: 2
 motion_high_fps: 25
 motion_low_fps: 1
 motion_min_area: 5000
-motion_sensitivity: 128  # 0-255: Higher = more sensitive (inverted internally to threshold)
+motion_sensitivity: 128
 motion_zones: []
-
-# Tapway-style Recording Features
-pre_record_buffer: 0       # Seconds to record before motion (0-5, requires buffering)
-zone_mode: "all"           # "all" = apply zones to all cameras, "individual" = per-camera zones
+pre_record_buffer: 0
+rtsp_relay_port: 8554
 streams:
-- chunk_duration: 9
-  chunk_fps: 4
-  chunking_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: false
   enabled: true
-  id: Pantry
-  name: Camera 192.168.0.14
-  rtsp_url: rtsp://admin:tapway123@192.168.0.14:554/cam/realmonitor?channel=1&subtype=0
+  id: Test
+  name: Camera 192.168.1.133
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.133:554/stream1
   streaming_enabled: true
-  motion_sensitivity: 128      # 0-255: Higher = more sensitive
-  motion_zones: []             # Per-camera zones (if zone_mode is "individual")
-  pre_record_buffer: 0        # Per-camera pre-record buffer
-- chunk_duration: 9
-  chunk_fps: 4
-  chunking_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: false
   enabled: true
-  id: OfficeWindow
-  name: Camera 192.168.0.130
-  rtsp_url: rtsp://admin:tapway123@192.168.0.130:554/cam/realmonitor?channel=1&subtype=0
+  id: Test2
+  name: Camera 192.168.1.102
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.102:554/stream1
   streaming_enabled: true
-  motion_sensitivity: 128
-  motion_zones: []
-  pre_record_buffer: 0
-- chunk_duration: 9
-  chunk_fps: 4
-  chunking_enabled: true
+- chunk_duration: 5
+  chunk_fps: 2
+  chunking_enabled: false
   enabled: true
-  id: OfficeEntrance
-  name: Camera 192.168.0.198
-  rtsp_url: rtsp://admin:tapway123@192.168.0.198:554/cam/realmonitor?channel=1&subtype=0
+  id: Test3
+  name: Camera 192.168.1.103
+  rtsp_url: rtsp://orinnano:orinnano@192.168.1.103:554/stream1
   streaming_enabled: true
-  motion_sensitivity: 128
-  motion_zones: []
-  pre_record_buffer: 0
 use_hardware_decode: true
 use_hardware_encode: true
-
-# Hardware pipeline settings
-use_hardware_pipeline: true  # Enable pure GStreamer hardware pipeline
-chunk_bitrate: 2000000       # 2 Mbps
+use_hardware_pipeline: true
+zone_mode: all

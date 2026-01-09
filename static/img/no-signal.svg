@@ -1,0 +1,11 @@
+<svg width="400" height="300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="300" fill="#1E293B"/>
+  <g transform="translate(200, 150)">
+    <circle r="40" fill="none" stroke="#475569" stroke-width="3"/>
+    <line x1="0" y1="-40" x2="0" y2="40" stroke="#475569" stroke-width="3"/>
+    <line x1="-40" y1="0" x2="40" y2="0" stroke="#475569" stroke-width="3"/>
+  </g>
+  <text x="200" y="220" text-anchor="middle" fill="#94A3B8" font-family="Arial" font-size="16">
+    No Signal
+  </text>
+</svg>
