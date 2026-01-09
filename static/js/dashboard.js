@@ -231,26 +231,40 @@ async function updateStreamPushStatus() {
 
 // Remove stream
 async function removeStream(streamId) {
-    if (!confirm('Remove this camera?')) {
+    if (!confirm('Remove this camera? This action cannot be undone.')) {
         return;
     }
-    
+
     try {
+        console.log('Removing stream:', streamId);
+
         const response = await fetch('/api/remove_stream', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({ stream_id: streamId })
         });
-        
+
+        console.log('Response status:', response.status);
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('Response error:', errorText);
+            alert('Failed to remove camera: Server returned ' + response.status);
+            return;
+        }
+
         const data = await response.json();
-        
+        console.log('Response data:', data);
+
         if (data.success) {
+            alert('Camera removed successfully!');
             window.location.reload();
         } else {
-            alert('Failed to remove camera: ' + data.error);
+            alert('Failed to remove camera: ' + (data.error || 'Unknown error'));
         }
     } catch (error) {
-        alert('Error removing camera: ' + error);
+        console.error('Error removing camera:', error);
+        alert('Network error: Unable to connect to server. Please check if the server is running.');
     }
 }
 

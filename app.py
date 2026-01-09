@@ -285,31 +285,37 @@ def stop_stream(stream_id):
         del streamers[stream_id]
         print(f"Stopped stream: {stream_id}")
 
-        # Remove from DeepStream REST API if enabled
+        # Remove from DeepStream REST API if enabled (non-blocking)
         if deepstream_client and rtsp_relay:
             # Find the stream config to get the RTSP URL
             for stream in config.get('streams', []):
                 if stream.get('id') == stream_id:
-                    try:
-                        # Get the public URL that was used
-                        public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+                    # Do DeepStream cleanup in background thread to avoid blocking
+                    def cleanup_deepstream():
+                        try:
+                            # Get the public URL that was used
+                            public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
 
-                        # Remove from DeepStream
-                        result = deepstream_client.remove_stream(
-                            camera_id=stream_id,
-                            rtsp_url=public_rtsp_url
-                        )
+                            # Remove from DeepStream with timeout
+                            result = deepstream_client.remove_stream(
+                                camera_id=stream_id,
+                                rtsp_url=public_rtsp_url
+                            )
 
-                        if result:
-                            print(f"✓ Removed stream from DeepStream: {stream_id}")
-                        else:
-                            print(f"✗ Failed to remove stream from DeepStream: {stream_id}")
+                            if result:
+                                print(f"OK: Removed stream from DeepStream: {stream_id}")
+                            else:
+                                print(f"WARNING: Failed to remove stream from DeepStream: {stream_id}")
 
-                        # Stop RTSP relay
-                        rtsp_relay.stop_relay(stream_id)
+                            # Stop RTSP relay
+                            rtsp_relay.stop_relay(stream_id)
 
-                    except Exception as e:
-                        print(f"Error removing stream from DeepStream {stream_id}: {e}")
+                        except Exception as e:
+                            print(f"Error removing stream from DeepStream {stream_id}: {e}")
+
+                    # Run cleanup in background
+                    import threading
+                    threading.Thread(target=cleanup_deepstream, daemon=True).start()
                     break
 
 # ==================== Web Routes ====================
@@ -582,26 +588,33 @@ def api_remove_stream():
             return jsonify({'success': False, 'error': 'stream_id required'}), 400
 
         stream_id = data['stream_id']
+        print(f"Removing stream: {stream_id}")
 
-        # Stop stream (no-op if not running)
-        try:
-            stop_stream(stream_id)
-        except Exception as e:
-            # Log and continue removing from config
-            print(f"Error stopping stream {stream_id}: {e}")
-
-        # Remove from config
+        # Remove from config first (most important)
         streams = config.get('streams', []) or []
         new_streams = [s for s in streams if s.get('id') != stream_id]
         if len(new_streams) == len(streams):
             # stream id wasn't found in config -> return 404
+            print(f"Stream {stream_id} not found in config")
             return jsonify({'success': False, 'error': 'stream not found'}), 404
 
         config['streams'] = new_streams
         save_config()
+        print(f"Removed {stream_id} from config")
 
-        return jsonify({'success': True})
+        # Stop stream (non-blocking, won't affect response)
+        try:
+            stop_stream(stream_id)
+            print(f"Stopped stream process: {stream_id}")
+        except Exception as e:
+            # Log but don't fail the request
+            print(f"Error stopping stream {stream_id}: {e}")
+
+        return jsonify({'success': True, 'message': f'Stream {stream_id} removed successfully'})
     except Exception as e:
+        print(f"Error in remove_stream API: {e}")
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/toggle_stream', methods=['POST'])

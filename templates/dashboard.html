@@ -110,7 +110,15 @@
                     <i class="fas fa-video"></i>
                     {{ stream.name }}
                 </div>
-                <div class="camera-id">ID: {{ stream.id }}</div>
+                <div class="camera-id" style="display: flex; align-items: center; gap: 8px;">
+                    <span>ID:</span>
+                    <span id="cameraIdText-{{ stream.id }}" style="font-family: monospace;">{{ stream.id }}</span>
+                    <button class="btn-camera-action" style="padding: 4px 8px; font-size: 11px;"
+                            onclick="editCameraId('{{ stream.id }}'); return false;"
+                            title="Edit Camera ID">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                </div>
 
                 <div class="camera-stats">
                     <div class="stat-item">
@@ -238,10 +246,32 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard.js') }}?v={{ range(1, 1000000) | random }}"></script>
 <script>
 // Camera count
 document.getElementById('cameraCount').textContent = {{ streams|length }};
+
+// Show notification
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show`;
+    notification.style.position = 'fixed';
+    notification.style.top = '80px';
+    notification.style.right = '20px';
+    notification.style.zIndex = '9999';
+    notification.style.minWidth = '300px';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    document.body.appendChild(notification);
+
+    // Auto dismiss after 3 seconds
+    setTimeout(() => {
+        notification.classList.remove('show');
+        setTimeout(() => notification.remove(), 150);
+    }, 3000);
+}
 
 // View camera in full screen
 function viewCameraFull(streamId) {
@@ -278,6 +308,44 @@ function toggleSettings(streamId) {
     } else {
         settingsDiv.style.display = 'none';
         toggleIcon.style.transform = 'rotate(0deg)';
+    }
+}
+
+// Edit camera ID
+async function editCameraId(oldId) {
+    const newId = prompt('Enter new Camera ID (alphanumeric, underscores, and hyphens only):', oldId);
+
+    if (!newId || newId === oldId) {
+        return;
+    }
+
+    // Validate format
+    if (!/^[a-zA-Z0-9_-]+$/.test(newId)) {
+        alert('Camera ID can only contain letters, numbers, underscores, and hyphens.');
+        return;
+    }
+
+    if (!confirm(`Change camera ID from "${oldId}" to "${newId}"?\n\nThis will:\n- Restart the camera stream\n- Rename all related files\n- Update all configurations`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/change_camera_id', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ old_id: oldId, new_id: newId })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Camera ID changed successfully! Reloading page...');
+            window.location.reload();
+        } else {
+            alert('Failed to change camera ID: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error changing camera ID: ' + error);
     }
 }
 

@@ -94,13 +94,13 @@ class Streamer:
             has_nvenc = result.returncode == 0
             
             if has_nvdec and has_nvenc:
-                self.logger.info("✓ GStreamer with NVIDIA plugins available")
+                self.logger.info("OK: GStreamer with NVIDIA plugins available")
                 return True
             else:
-                self.logger.warning("⚠ GStreamer missing NVIDIA plugins")
+                self.logger.warning("WARNING: GStreamer missing NVIDIA plugins")
                 return False
         except Exception as e:
-            self.logger.warning(f"⚠ GStreamer not available: {e}")
+            self.logger.warning(f"WARNING: GStreamer not available: {e}")
             return False
 
     def _setup_logger(self):
@@ -267,7 +267,7 @@ class Streamer:
                         self.hw_pipeline.start()
                         pipeline_running = True
                         self.recording_start_time = time.time()
-                        self.logger.info("✓ Hardware pipeline recording with fixed-duration chunks")
+                        self.logger.info("OK: Hardware pipeline recording with fixed-duration chunks")
                 
                 time.sleep(0.5)
                 
@@ -308,9 +308,9 @@ class Streamer:
                     # Validate chunk duration before uploading
                     if self._validate_chunk_duration(chunk_path, target_duration):
                         self._queue_chunk_upload(chunk_path)
-                        self.logger.info(f"✓ Queued chunk: {chunk_path.name} ({file_size} bytes)")
+                        self.logger.info(f"OK: Queued chunk: {chunk_path.name} ({file_size} bytes)")
                     else:
-                        self.logger.warning(f"⚠ Skipping chunk with incorrect duration: {chunk_path.name}")
+                        self.logger.warning(f"WARNING: Skipping chunk with incorrect duration: {chunk_path.name}")
                         # Optionally move to quarantine folder
                         quarantine_dir = Path('tmp/quarantine')
                         quarantine_dir.mkdir(parents=True, exist_ok=True)
@@ -318,7 +318,7 @@ class Streamer:
                         chunk_path.rename(quarantine_path)
                         self.logger.info(f"Moved to quarantine: {quarantine_path}")
                 else:
-                    self.logger.warning(f"⚠ Skipping small file: {chunk_path.name} ({file_size} bytes)")
+                    self.logger.warning(f"WARNING: Skipping small file: {chunk_path.name} ({file_size} bytes)")
                     
         except Exception as e:
             self.logger.error(f"Error uploading session chunks: {e}")
@@ -351,7 +351,7 @@ class Streamer:
             max_duration = target_duration + tolerance
             
             if min_duration <= actual_duration <= max_duration:
-                self.logger.debug(f"✓ Chunk duration valid: {actual_duration:.2f}s (target: {target_duration}s)")
+                self.logger.debug(f"OK: Chunk duration valid: {actual_duration:.2f}s (target: {target_duration}s)")
                 return True
             else:
                 self.logger.warning(f"✗ Chunk duration mismatch: {actual_duration:.2f}s (expected: {target_duration}±{tolerance}s)")
@@ -453,7 +453,7 @@ class Streamer:
         except:
             pass
 
-        self.logger.info("✓ Streamer stopped")
+        self.logger.info("OK: Streamer stopped")
 
     def cleanup_logger(self):
         """Close all logger handlers to release file locks"""

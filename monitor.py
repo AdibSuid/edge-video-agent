@@ -85,9 +85,9 @@ class NetworkMonitor:
                         
                         # Log state changes
                         if self.is_slow and not was_slow:
-                            print(f"⚠️ Network slow: {mbps:.2f} Mbps (threshold: {self.threshold_mbps} Mbps)")
+                            print(f"WARNING: Network slow: {mbps:.2f} Mbps (threshold: {self.threshold_mbps} Mbps)")
                         elif not self.is_slow and was_slow:
-                            print(f"✓ Network recovered: {mbps:.2f} Mbps")
+                            print(f"OK: Network recovered: {mbps:.2f} Mbps")
                 
                 # Update for next iteration
                 self.last_bytes_sent = current_bytes_sent
@@ -187,7 +187,7 @@ class TelegramNotifier:
     def send_network_slow_alert(self, current_mbps, threshold_mbps):
         """Send network slow alert"""
         message = (
-            f"⚠️ <b>Network Speed Alert</b>\n\n"
+            f"WARNING: <b>Network Speed Alert</b>\n\n"
             f"Upload speed: <b>{current_mbps:.2f} Mbps</b>\n"
             f"Threshold: {threshold_mbps} Mbps\n\n"
             f"Switching to low quality mode..."

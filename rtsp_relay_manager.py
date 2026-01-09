@@ -30,9 +30,9 @@ class RTSPRelayManager:
 
         # Check if MediaMTX is required
         if not self.public_ip and not self.public_domain:
-            self.logger.warning("⚠ No edge_public_ip or edge_public_domain configured!")
-            self.logger.warning("⚠ DeepStream will not be able to access streams from cloud")
-            self.logger.warning("⚠ Add 'edge_public_ip' or 'edge_public_domain' to config.yaml")
+            self.logger.warning("WARNING: No edge_public_ip or edge_public_domain configured!")
+            self.logger.warning("WARNING: DeepStream will not be able to access streams from cloud")
+            self.logger.warning("WARNING: Add 'edge_public_ip' or 'edge_public_domain' to config.yaml")
 
     def _setup_logger(self):
         logger = logging.getLogger('rtsp-relay')
@@ -102,7 +102,7 @@ class RTSPRelayManager:
                 'public_url': self.get_public_rtsp_url(stream_id)
             }
 
-            self.logger.info(f"✓ RTSP relay started for {stream_id}")
+            self.logger.info(f"OK: RTSP relay started for {stream_id}")
             return True
 
         except Exception as e:
@@ -120,7 +120,7 @@ class RTSPRelayManager:
                 process.wait(timeout=5)
 
                 del self.relays[stream_id]
-                self.logger.info(f"✓ RTSP relay stopped for {stream_id}")
+                self.logger.info(f"OK: RTSP relay stopped for {stream_id}")
 
             except subprocess.TimeoutExpired:
                 self.logger.warning(f"Force killing relay for {stream_id}")
