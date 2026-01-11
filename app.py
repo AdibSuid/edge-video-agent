@@ -12,6 +12,8 @@ from pathlib import Path
 from datetime import datetime
 import threading
 import time
+import argparse
+import sys
 
 from streamer import Streamer
 from discovery import ONVIFDiscovery, scan_network_ports
@@ -20,6 +22,7 @@ import cloud_uploader as cloud_uploader_module
 from cloud_uploader import init_cloud_uploader
 from rest_api_client import DeepStreamRESTClient
 from rtsp_relay_manager import RTSPRelayManager
+from rtmp_push_manager import RTMPPushManager
 
 app = Flask(__name__)
 
@@ -56,6 +59,7 @@ telegram_notifier = None
 discovery = ONVIFDiscovery()
 deepstream_client = None
 rtsp_relay = None
+rtmp_push_manager = None
 
 def load_config():
     """Load configuration from YAML file"""
@@ -136,18 +140,25 @@ def init_services():
         print("Cloud upload disabled (configure cloud_upload_url, cloud_username, cloud_password)")
     
     # DeepStream REST API client
-    global deepstream_client, rtsp_relay
+    global deepstream_client, rtsp_relay, rtmp_push_manager
     deepstream_api_url = config.get('deepstream_api_url', '')
     if deepstream_api_url:
         deepstream_client = DeepStreamRESTClient(deepstream_api_url)
         print(f"DeepStream REST API enabled: {deepstream_api_url}")
 
-        # Initialize RTSP relay for cloud access
-        rtsp_relay = RTSPRelayManager(config)
-        print("RTSP Relay Manager initialized")
+        # Initialize RTMP Push Manager for cloud access (replaces RTSP relay)
+        cloud_rtmp_url = config.get('cloud_rtmp_url', '')
+        if cloud_rtmp_url:
+            rtmp_push_manager = RTMPPushManager(config)
+            print(f"RTMP Push Manager initialized: {cloud_rtmp_url}")
+        else:
+            # Fallback to RTSP relay if no cloud RTMP URL configured
+            rtsp_relay = RTSPRelayManager(config)
+            print("RTSP Relay Manager initialized (fallback - configure cloud_rtmp_url for cloud push)")
     else:
         deepstream_client = None
         rtsp_relay = None
+        rtmp_push_manager = None
         print("DeepStream REST API disabled (configure deepstream_api_url)")
     
     # Start network quality monitor thread
@@ -245,30 +256,71 @@ def start_stream(stream):
         print(f"Started stream: {stream_id} - {stream['name']} -> {stream['rtsp_url']}")
 
         # Add to DeepStream REST API if enabled
-        if deepstream_client and rtsp_relay:
+        if deepstream_client:
             try:
-                # Start RTSP relay to make local stream accessible from cloud
-                relay_started = rtsp_relay.start_relay(stream_id, stream['rtsp_url'])
+                # Use RTMP push if available, otherwise fall back to RTSP relay
+                if rtmp_push_manager:
+                    # Start RTMP push to cloud MediaMTX
+                    push_started = rtmp_push_manager.start_push(stream_id, stream['rtsp_url'])
 
-                if relay_started:
-                    # Get public RTSP URL for DeepStream
-                    public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+                    if push_started:
+                        # Cloud MediaMTX will convert RTMP to RTSP automatically
+                        # DeepStream connects via Docker network using service name
 
-                    # Add stream to DeepStream using public URL
-                    result = deepstream_client.add_stream(
-                        camera_id=stream_id,
-                        camera_name=stream['name'],
-                        rtsp_url=public_rtsp_url  # Use public URL instead of local
-                    )
+                        # Use mediamtx_hostname from config (defaults to 'mediamtx' for Docker)
+                        mediamtx_hostname = config.get('mediamtx_hostname', 'mediamtx')
+                        mediamtx_rtsp_port = config.get('mediamtx_rtsp_port', 8554)
 
-                    if result:
-                        print(f"✓ Added stream to DeepStream: {stream_id}")
-                        print(f"  Public URL: {public_rtsp_url}")
+                        # Build RTSP URL for DeepStream
+                        # Format: rtsp://mediamtx:8554/live/{stream_id}
+                        public_rtsp_url = f"rtsp://{mediamtx_hostname}:{mediamtx_rtsp_port}/live/{stream_id}"
+
+                        # Wait a moment for stream to be available
+                        time.sleep(2)
+
+                        # Add stream to DeepStream using MediaMTX URL
+                        result = deepstream_client.add_stream(
+                            camera_id=stream_id,
+                            camera_name=stream['name'],
+                            rtsp_url=public_rtsp_url
+                        )
+
+                        if result:
+                            print(f"✓ Added stream to DeepStream: {stream_id}")
+                            print(f"  Cloud RTSP URL: {public_rtsp_url}")
+                        else:
+                            print(f"✗ Failed to add stream to DeepStream: {stream_id}")
+                            # For local testing, don't stop RTMP push if DeepStream fails
+                            if 'localhost' not in deepstream_api_url:
+                                rtmp_push_manager.stop_push(stream_id)  # Clean up push
                     else:
-                        print(f"✗ Failed to add stream to DeepStream: {stream_id}")
-                        rtsp_relay.stop_relay(stream_id)  # Clean up relay
-                else:
-                    print(f"✗ Failed to start RTSP relay for {stream_id}")
+                        print(f"✗ Failed to start RTMP push for {stream_id}")
+
+                elif rtsp_relay:
+                    # Fallback to RTSP relay (legacy method)
+                    relay_started = rtsp_relay.start_relay(stream_id, stream['rtsp_url'])
+
+                    if relay_started:
+                        # Get public RTSP URL for DeepStream
+                        public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+
+                        # Add stream to DeepStream using public URL
+                        result = deepstream_client.add_stream(
+                            camera_id=stream_id,
+                            camera_name=stream['name'],
+                            rtsp_url=public_rtsp_url
+                        )
+
+                        if result:
+                            print(f"✓ Added stream to DeepStream: {stream_id}")
+                            print(f"  Public URL: {public_rtsp_url}")
+                        else:
+                            print(f"✗ Failed to add stream to DeepStream: {stream_id}")
+                            # For local testing, don't stop RTSP relay if DeepStream fails
+                            if 'localhost' not in deepstream_api_url:
+                                rtsp_relay.stop_relay(stream_id)  # Clean up relay
+                    else:
+                        print(f"✗ Failed to start RTSP relay for {stream_id}")
 
             except Exception as e:
                 print(f"Error adding stream to DeepStream {stream_id}: {e}")
@@ -286,15 +338,25 @@ def stop_stream(stream_id):
         print(f"Stopped stream: {stream_id}")
 
         # Remove from DeepStream REST API if enabled (non-blocking)
-        if deepstream_client and rtsp_relay:
+        if deepstream_client:
             # Find the stream config to get the RTSP URL
             for stream in config.get('streams', []):
                 if stream.get('id') == stream_id:
                     # Do DeepStream cleanup in background thread to avoid blocking
                     def cleanup_deepstream():
                         try:
-                            # Get the public URL that was used
-                            public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+                            # Stop RTMP push or RTSP relay
+                            if rtmp_push_manager:
+                                rtmp_push_manager.stop_push(stream_id)
+                                # Generate cloud RTSP URL for removal
+                                mediamtx_hostname = config.get('mediamtx_hostname', 'mediamtx')
+                                mediamtx_rtsp_port = config.get('mediamtx_rtsp_port', 8554)
+                                public_rtsp_url = f"rtsp://{mediamtx_hostname}:{mediamtx_rtsp_port}/live/{stream_id}"
+                            elif rtsp_relay:
+                                public_rtsp_url = rtsp_relay.get_public_rtsp_url(stream_id)
+                                rtsp_relay.stop_relay(stream_id)
+                            else:
+                                return
 
                             # Remove from DeepStream with timeout
                             result = deepstream_client.remove_stream(
@@ -306,9 +368,6 @@ def stop_stream(stream_id):
                                 print(f"OK: Removed stream from DeepStream: {stream_id}")
                             else:
                                 print(f"WARNING: Failed to remove stream from DeepStream: {stream_id}")
-
-                            # Stop RTSP relay
-                            rtsp_relay.stop_relay(stream_id)
 
                         except Exception as e:
                             print(f"Error removing stream from DeepStream {stream_id}: {e}")
@@ -1164,10 +1223,19 @@ def proxy_deepstream_health():
 # ==================== Main ====================
 
 if __name__ == '__main__':
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Edge Agent - Motion-Triggered Video Streaming')
+    parser.add_argument('--config', type=str, default='config.yaml',
+                        help='Path to configuration file (default: config.yaml)')
+    args = parser.parse_args()
+
+    # Set global config file path
+    config_file = Path(args.config)
+
     print("=" * 60)
     print("Edge Agent - Motion-Triggered Video Streaming")
     print("=" * 60)
-    
+
     # Load config
     load_config()
     print(f"Configuration loaded from {config_file}")

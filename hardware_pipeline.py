@@ -10,6 +10,7 @@ from pathlib import Path
 import logging
 import signal
 import os
+import shutil
 
 
 class HardwarePipeline:
@@ -23,6 +24,25 @@ class HardwarePipeline:
         self.process = None
         self.running = False
         self.logger = self._setup_logger()
+
+        # Find gst-launch-1.0 executable
+        self.gst_launch_path = shutil.which('gst-launch-1.0')
+        if not self.gst_launch_path:
+            # Try common Windows locations
+            common_paths = [
+                r'C:\Program Files\gstreamer\1.0\msvc_x86_64\bin\gst-launch-1.0.exe',
+                r'C:\gstreamer\1.0\msvc_x86_64\bin\gst-launch-1.0.exe',
+                r'C:\Program Files (x86)\gstreamer\1.0\msvc_x86_64\bin\gst-launch-1.0.exe'
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    self.gst_launch_path = path
+                    break
+        
+        if not self.gst_launch_path:
+            self.logger.error("gst-launch-1.0 not found. Hardware pipeline may not work.")
+        else:
+            self.logger.info(f"Found gst-launch-1.0 at: {self.gst_launch_path}")
         
     def _setup_logger(self):
         log_dir = Path('logs')
@@ -79,7 +99,7 @@ class HardwarePipeline:
         # FIXED CHUNK DURATION MODE: Split based on chunk_duration setting
         # Uses splitmuxsink to create fixed-duration chunks
         pipeline = [
-            'gst-launch-1.0', '-e',
+            self.gst_launch_path or 'gst-launch-1.0', '-e',
             'uridecodebin',
             f'uri={self.rtsp_url}',
             'protocols=tcp',  # Force TCP to avoid packet loss

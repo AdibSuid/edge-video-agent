@@ -1,0 +1,32 @@
+# MediaMTX Local Test Configuration
+# This mimics your cloud MediaMTX setup for local testing
+
+logLevel: info
+logDestinations: [stdout]
+
+# RTMP Server (receives push from Edge Agent)
+rtmp: yes
+rtmpAddress: :1935
+
+# RTSP Server (what DeepStream would connect to)
+rtspAddress: :8554
+rtspTransports: [tcp]
+
+# HLS Server (optional - for browser testing)
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+
+# API for monitoring
+api: yes
+apiAddress: :9997
+
+# Paths - accept any stream under /live/*
+paths:
+  # Match pattern: /live/{stream_id}
+  ~^live/.+$:
+    source: publisher
+    publishUser: ""
+    publishPass: ""
+    readUser: null
+    readPass: null

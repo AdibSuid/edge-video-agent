@@ -1,13 +1,20 @@
+# Local Testing Configuration
+# Copy from config.yaml and modify for local testing
+
 chunk_bitrate: 2000000
 cloud_password: tapwaysuperadmin
-cloud_upload_enabled: true
+cloud_rtmp_url: rtmp://localhost:1935
+cloud_upload_enabled: false
 cloud_upload_url: http://101.47.153.138:8081
 cloud_username: tapway
-deepstream_api_url: http://47.250.210.53:9002
+deepstream_api_url: http://localhost:9002
+mediamtx_hostname: localhost
+mediamtx_rtsp_port: 8554
 edge_public_domain: ''
 edge_public_ip: ''
 encoding_crf: 28
 encoding_preset: ultrafast
+hls_port: 8888
 motion_blur_kernel: 5
 motion_cooldown: 3
 motion_detection_scale: 1.0
@@ -17,6 +24,7 @@ motion_low_fps: 1
 motion_min_area: 5000
 motion_sensitivity: 128
 motion_zones: []
+ngrok_enabled: false
 pre_record_buffer: 0
 rtsp_relay_port: 8554
 streams:
@@ -47,4 +55,6 @@ streams:
 use_hardware_decode: true
 use_hardware_encode: true
 use_hardware_pipeline: true
+webrtc_enabled: false
+webrtc_port: 8889
 zone_mode: all

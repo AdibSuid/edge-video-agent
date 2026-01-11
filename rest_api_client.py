@@ -44,46 +44,34 @@ class DeepStreamRESTClient:
         """Get all active streams"""
         return self._make_request("GET", "/stream/get-stream-info")
     
-    def add_stream(self, camera_id: str, camera_name: str, rtsp_url: str, 
-                   resolution: str = "1920x1080", codec: str = "h264", 
+    def add_stream(self, camera_id: str, camera_name: str, rtsp_url: str,
+                   resolution: str = "1920x1080", codec: str = "h264",
                    framerate: int = 10) -> Dict:
         """Add a new video stream"""
+        # Match exact format used by DeepStream REST API
         payload = {
             "key": "sensor",
             "value": {
                 "camera_id": camera_id,
                 "camera_name": camera_name,
                 "camera_url": rtsp_url,
-                "change": "camera_add",
-                "metadata": {
-                    "resolution": resolution,
-                    "codec": codec,
-                    "framerate": framerate
-                }
-            },
-            "headers": {
-                "source": "python_client",
-                "created_at": datetime.now(timezone.utc).isoformat() + "Z"
+                "change": "camera_add"
             }
         }
-        
+
         return self._make_request("POST", "/stream/add", payload)
     
-    def remove_stream(self, camera_id: str, rtsp_url: str) -> Dict:
+    def remove_stream(self, camera_id: str, rtsp_url: str = None) -> Dict:
         """Remove a video stream"""
+        # Match exact format used by DeepStream REST API
         payload = {
             "key": "sensor",
             "value": {
                 "camera_id": camera_id,
-                "camera_url": rtsp_url,
                 "change": "camera_remove"
-            },
-            "headers": {
-                "source": "python_client",
-                "created_at": datetime.now(timezone.utc).isoformat() + "Z"
             }
         }
-        
+
         return self._make_request("POST", "/stream/remove", payload)
     
     def set_inference_interval(self, stream_id: str, interval: int) -> Dict:
